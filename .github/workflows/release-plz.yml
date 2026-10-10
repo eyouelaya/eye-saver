@@ -2,10 +2,14 @@ name: Release-plz
 
 # Keeps one pull request up to date proposing the next version, computed from Conventional
 # Commits merged since the last release (see release-plz.toml and README.md's "Releasing"
-# section) - and, separately, cuts the actual tag the moment that PR's version bump lands
-# on main. Nothing here builds an installer: pushing the resulting `v*` tag is what
-# triggers release.yml to do that.
-
+# section) - and, separately, cuts the actual tag and GitHub Release the moment that PR's
+# version bump lands on main.
+#
+# release-plz-release pushes that tag using the default GITHUB_TOKEN, and GitHub
+# deliberately does not let a GITHUB_TOKEN-authored push trigger *other* workflows (its
+# anti-recursion protection) - so release.yml's own `tags: ['v*']` trigger alone would
+# never fire for it. build-installers calls release.yml directly instead, job-to-job
+# within this same run, which sidesteps that restriction entirely.
 on:
   push:
     branches: [main]
@@ -23,16 +27,37 @@ jobs:
   release-plz-release:
     name: Release-plz release
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.releases_created }}
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
-      - uses: release-plz/action@v0.5
+      - id: release
+        uses: release-plz/action@v0.5
         with:
           command: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Read the tag that was just released
+        id: tag
+        if: steps.release.outputs.releases_created == 'true'
+        run: |
+          tag=$(jq -r '.[0].tag' <<< '${{ steps.release.outputs.releases }}')
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  # Only runs right after release-plz-release actually cut something - i.e. only on the
+  # push where the release PR was just merged.
+  build-installers:
+    name: Build and attach installers
+    needs: release-plz-release
+    if: needs.release-plz-release.outputs.released == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      ref: ${{ needs.release-plz-release.outputs.tag }}
+    secrets: inherit
 
   # Opens or updates the "chore: release vX.Y.Z" PR. release-plz is idempotent here: if
   # nothing releasable has landed since the last one, it leaves any existing PR as-is

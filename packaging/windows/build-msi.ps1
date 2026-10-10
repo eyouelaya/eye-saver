@@ -9,9 +9,11 @@
     ./packaging/windows/build-msi.ps1                      # x64
     ./packaging/windows/build-msi.ps1 -Arch arm64          # ARM64
 
-  Requires the WiX v4 command line, which is a .NET tool:
+  Requires the WiX v4 command line, which is a .NET tool. Pin the version: v7 needs its
+  "Open Source Maintenance Fee" EULA accepted before it will run at all, and targets a
+  different Package.wxs schema besides.
 
-    dotnet tool install --global wix
+    dotnet tool install --global wix --version 4.0.6
 
   Set WINDOWS_CERT (and optionally WINDOWS_CERT_PASSWORD) to sign the result; without it
   the MSI is unsigned and SmartScreen will warn on first run.

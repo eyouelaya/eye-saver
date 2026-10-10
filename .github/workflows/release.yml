@@ -1,15 +1,39 @@
 name: Release
 
+# Three ways in:
+#
+# * a `v*` tag pushed by a human, directly - the ref itself names the release.
+# * `workflow_dispatch` - same, against whatever ref you point it at.
+# * `workflow_call` from release-plz.yml, passing `ref` explicitly. This is the path that
+#   actually matters day to day: release-plz pushes its tag using the default
+#   GITHUB_TOKEN, and GitHub deliberately does not let a GITHUB_TOKEN-authored push
+#   trigger *other* workflows (its anti-recursion protection) - so a plain `tags: ['v*']`
+#   trigger alone would never fire for a bot-created release. Being called directly,
+#   job-to-job within the same run, sidesteps that restriction entirely.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      ref:
+        description: The tag to build and release (defaults to whatever ref this was run against).
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      ref:
+        description: The tag to build and release.
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 env:
   CARGO_TERM_COLOR: always
+  # Empty when triggered by an actual tag push or a manual run with no input: falls back
+  # to the triggering ref itself, which is the tag in both of those cases.
+  RELEASE_REF: ${{ inputs.ref || github.ref_name }}
 
 jobs:
   macos:
@@ -17,6 +41,8 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
@@ -44,12 +70,18 @@ jobs:
         arch: [x64, arm64]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc, aarch64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
       - name: Install WiX
-        run: dotnet tool install --global wix
+        # Pinned to v4, matching Package.wxs's schema (xmlns=".../v4/wxs"). An
+        # unpinned install now pulls v7, which both targets a different Package.wxs
+        # schema and refuses to run at all without accepting its "Open Source
+        # Maintenance Fee" EULA (error WIX7015) - v4 has neither problem.
+        run: dotnet tool install --global wix --version 4.0.6
       - name: Build the installer
         env:
           WINDOWS_CERT: ${{ secrets.WINDOWS_CERT }}
@@ -71,5 +103,6 @@ jobs:
           path: artifacts
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_REF }}
           files: artifacts/**/*
           generate_release_notes: true

@@ -212,7 +212,7 @@ make run            # run from the source tree
 make app
 make dmg
 
-# Windows: run on Windows, once per architecture. Needs `dotnet tool install --global wix`.
+# Windows: run on Windows, once per architecture. Needs `dotnet tool install --global wix --version 4.0.6`.
 ./packaging/windows/build-msi.ps1 -Arch x64
 ./packaging/windows/build-msi.ps1 -Arch arm64
 ```
