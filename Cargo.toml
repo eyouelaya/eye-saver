@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT"
-repository = "https://github.com/eyouelkenfu/eye-saver"
+repository = "https://github.com/eyouelaya/eye-saver"
 authors = ["EyeSaver contributors"]
 
 [workspace.dependencies]
