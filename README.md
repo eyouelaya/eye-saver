@@ -28,11 +28,21 @@ fresh interval instead of reminding an empty chair.
 1. Download `EyeSaver-<version>-universal.dmg` from the
    [latest release](../../releases/latest).
 2. Open it and drag **EyeSaver** to your Applications folder.
-3. **The first launch needs a right‑click.** The app is not signed with an Apple Developer
-   ID, so double‑clicking it shows *"EyeSaver cannot be opened because the developer cannot
-   be verified"*. Instead: right‑click (or Control‑click) **EyeSaver** in Applications →
-   **Open** → **Open**. macOS remembers the choice; every launch after that is a normal
-   double‑click.
+3. **The first launch needs one extra step.** The app is not signed with an Apple
+   Developer ID, so opening it shows *"Apple could not verify 'EyeSaver' is free of
+   malware…"* (worded *"…cannot be opened because the developer cannot be verified"* on
+   older macOS). What clears it depends on your macOS version:
+   - **macOS Sequoia (15) and later:** double‑click EyeSaver, click **Done** on the
+     warning, then go to **System Settings → Privacy & Security**, scroll to the
+     **Security** section, and click **Open Anyway** next to EyeSaver. Open it once more
+     and a second dialog offers a real **Open Anyway** button.
+   - **macOS Ventura/Sonoma and earlier:** right‑click (or Control‑click) **EyeSaver** in
+     Applications → **Open** → **Open**.
+   - **Fastest, if you're comfortable with Terminal, on any version:**
+     `xattr -cr /Applications/EyeSaver.app` removes the quarantine flag outright, no
+     dialogs at all.
+
+   macOS remembers the choice either way; every launch after that is a normal double‑click.
 4. The first reminder asks permission to show notifications. Allow it, or reminders will be
    silent.
 
