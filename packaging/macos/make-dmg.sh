@@ -2,7 +2,8 @@
 # Packs dist/EyeSaver.app into a disk image, building it first if necessary.
 #
 # Notarisation is attempted only when all three credentials are present; otherwise the
-# image is produced unsigned, and the README tells users to right-click -> Open once.
+# image is produced ad-hoc signed only, and the README walks users through the
+# per-macOS-version Gatekeeper bypass this needs on first launch.
 #
 #   APPLE_SIGNING_IDENTITY  Developer ID Application: ...
 #   AC_APPLE_ID             Apple ID for notarytool
@@ -43,7 +44,7 @@ if [[ -n "${APPLE_SIGNING_IDENTITY:-}" && -n "${AC_APPLE_ID:-}" && -n "${AC_PASS
     --apple-id "$AC_APPLE_ID" --password "$AC_PASSWORD" --team-id "$AC_TEAM_ID" --wait
   xcrun stapler staple "$DMG"
 else
-  echo "==> not notarised: users will need to right-click -> Open on first launch"
+  echo "==> not notarised: users will need to clear Gatekeeper on first launch (see README)"
 fi
 
 echo "==> built $DMG"
