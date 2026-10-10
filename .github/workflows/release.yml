@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macos:
+    name: macOS universal disk image
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the disk image
+        # Set APPLE_SIGNING_IDENTITY, AC_APPLE_ID, AC_PASSWORD and AC_TEAM_ID as secrets to
+        # sign and notarise; without them the image is produced unsigned.
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          AC_APPLE_ID: ${{ secrets.AC_APPLE_ID }}
+          AC_PASSWORD: ${{ secrets.AC_PASSWORD }}
+          AC_TEAM_ID: ${{ secrets.AC_TEAM_ID }}
+        run: ./packaging/macos/make-dmg.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist/*.dmg
+
+  windows:
+    name: Windows ${{ matrix.arch }} installer
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc, aarch64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+      - name: Install WiX
+        run: dotnet tool install --global wix
+      - name: Build the installer
+        env:
+          WINDOWS_CERT: ${{ secrets.WINDOWS_CERT }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: ./packaging/windows/build-msi.ps1 -Arch ${{ matrix.arch }}
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}-msi
+          path: dist/*.msi
+
+  publish:
+    name: Attach the installers to the release
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true

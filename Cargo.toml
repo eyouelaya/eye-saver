@@ -1,0 +1,51 @@
+[workspace]
+members = ["crates/core", "crates/platform", "crates/app", "xtask"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+repository = "https://github.com/eyouelkenfu/eye-saver"
+authors = ["EyeSaver contributors"]
+
+[workspace.dependencies]
+eye-saver-core = { path = "crates/core" }
+eye-saver-platform = { path = "crates/platform" }
+
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1"
+log = { version = "0.4.34", features = ["std"] }
+
+# Tray / menu bar: standalone crates. No webview, no plugin framework.
+tray-icon = "0.26"
+muda = "0.21"
+winit = "0.30.13"
+
+# Settings window: pure Rust egui on the glow (OpenGL) backend - no wgpu, no webview.
+egui = "0.36"
+egui-winit = { version = "0.36", default-features = false }
+egui_glow = { version = "0.36", default-features = false, features = ["winit"] }
+glutin = "0.32"
+glutin-winit = "0.5"
+raw-window-handle = "0.6"
+
+notify-rust = { version = "4.18", features = ["preview-macos-un"] }
+
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-app-kit = "0.3"
+objc2-core-graphics = "0.3"
+
+windows = "0.62"
+
+png = "0.18"
+proptest = "1.11"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

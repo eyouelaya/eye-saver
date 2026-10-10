@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, name: macOS (Apple silicon / aarch64) }
+          - { os: macos-13, name: macOS (Intel / x86_64) }
+          - { os: windows-latest, name: Windows (x86_64) }
+          - { os: windows-11-arm, name: Windows (aarch64) }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace
+
+  # The coverage gate is a property of the code rather than of the host, so it runs once.
+  # The excluded paths are the OS adapters and the event loop, which need a desktop
+  # session; see "Testing" in the README.
+  coverage:
+    name: Coverage gate (>=95% of the testable code)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Measure and enforce
+        run: |
+          cargo llvm-cov --workspace --summary-only \
+            --ignore-filename-regex '(crates/app/|crates/platform/src/os/|xtask/)' \
+            --fail-under-lines 95
+
+  # EyeSaver ships for two operating systems from one source tree, so each runner also
+  # type-checks the other one's adapters. A Windows-only mistake fails here, not at release.
+  cross-check:
+    name: Cross-target type check
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin, x86_64-pc-windows-msvc, aarch64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --target x86_64-apple-darwin
+      - run: cargo check -p eye-saver-platform --target x86_64-pc-windows-msvc
+      - run: cargo check -p eye-saver-platform --target aarch64-pc-windows-msvc
