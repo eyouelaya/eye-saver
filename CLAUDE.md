@@ -15,6 +15,17 @@ convention. This applies to you too:
 - This includes changes to this file, to workflows, to `release-plz.toml` — there are no
   exceptions carved out for tooling/config changes.
 
+Two related repo settings were changed directly via the GitHub API, not as a file in this
+repo, so note them here instead:
+
+- **Settings → Actions → General → Workflow permissions**: set to read-and-write, with
+  "Allow GitHub Actions to create and approve pull requests" enabled. Without the latter,
+  `release-plz-pr` fails outright with a 403 ("GitHub Actions is not permitted to create
+  or approve pull requests") — this is a repo-wide switch that overrides whatever a
+  workflow's own `permissions:` block requests, so don't waste time trying to fix a 403
+  like that from inside a workflow file.
+- The branch ruleset mentioned above, applied the same way (`gh api .../rulesets`).
+
 ## Commit messages: Conventional Commits, because they drive releases
 
 Version numbers are never hand-edited. [release-plz](https://release-plz.dev) computes

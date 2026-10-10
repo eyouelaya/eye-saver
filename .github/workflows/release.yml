@@ -72,7 +72,11 @@ jobs:
           targets: x86_64-pc-windows-msvc, aarch64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
       - name: Install WiX
-        run: dotnet tool install --global wix
+        # Pinned to v4, matching Package.wxs's schema (xmlns=".../v4/wxs"). An
+        # unpinned install now pulls v7, which both targets a different Package.wxs
+        # schema and refuses to run at all without accepting its "Open Source
+        # Maintenance Fee" EULA (error WIX7015) - v4 has neither problem.
+        run: dotnet tool install --global wix --version 4.0.6
       - name: Build the installer
         env:
           WINDOWS_CERT: ${{ secrets.WINDOWS_CERT }}
