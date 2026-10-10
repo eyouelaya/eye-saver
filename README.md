@@ -246,6 +246,59 @@ at runtime — writing the container formats directly so they can be regenerated
 
 ---
 
+## Releasing
+
+`main` is protected: every change, including this repo's own config, goes through a pull
+request — there is no direct push, not even for the owner. Version numbers are never
+hand-edited; they are computed automatically from commit messages by
+[release-plz](https://release-plz.dev), configured in `release-plz.toml`.
+
+### Commit messages
+
+Every commit message (or, if you squash-merge, the squash commit message — only what
+actually lands on `main` is read) should follow
+[Conventional Commits](https://www.conventionalcommits.org/):
+
+| Prefix | Meaning |
+|---|---|
+| `fix: …` | A bug fix |
+| `feat: …` | A new feature |
+| `feat!: …`, `fix!: …`, or a `BREAKING CHANGE:` footer | A breaking change |
+| `chore:`, `docs:`, `style:`, `refactor:`, `test:`, `build:`, `ci:` | Housekeeping — doesn't trigger a release on its own |
+
+**While the version stays below `1.0.0`** (EyeSaver's current state), `feat`, `fix`, and
+even breaking changes all just increment the patch number (`0.1.0` → `0.1.1`) — this is
+the standard Rust-ecosystem reading of semver's "0.x.y: anything may change" clause, and
+it is deliberate: crossing into `1.0.0` is always a decision a person makes on purpose
+(`release-plz set-version 1.0.0`), never something inferred from a commit message.
+Once past `1.0.0`, the usual mapping applies: `fix` → patch, `feat` → minor, breaking → major.
+
+### What actually happens
+
+```
+you merge a PR with a feat:/fix: commit
+                │
+                ▼
+release-plz opens or updates one PR: "chore: release vX.Y.Z"
+   (bumps the version + CHANGELOG.md — no code in this PR)
+                │
+                ▼
+          you merge that PR
+                │
+                ▼
+   the vX.Y.Z tag is created automatically
+                │
+                ▼
+   release.yml builds the DMG + both MSIs and attaches
+   them to a new GitHub Release
+```
+
+So the one deliberate action that ships a release is merging the bot's version-bump PR —
+everything before and after that is automatic. Ordinary PRs that don't warrant a release
+yet (or that only contain `chore:`/`docs:` commits) just leave that PR as it is.
+
+---
+
 ## Testing
 
 ```sh
