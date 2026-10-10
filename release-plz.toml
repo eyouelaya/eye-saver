@@ -1,0 +1,49 @@
+# Configuration for release-plz (https://release-plz.dev), which automates versioning.
+#
+# On every push to main, release-plz opens or updates a "chore: release vX.Y.Z" pull
+# request that bumps the version below and updates each crate's CHANGELOG.md, computed
+# from the Conventional Commits merged since the last release (see README.md's
+# "Releasing" section for the commit message rules, and CLAUDE.md for the summary
+# agents should follow). Nothing is released automatically: merging that one PR is what
+# creates the git tag, which is what the "Release" workflow then builds installers from.
+#
+# None of EyeSaver's crates are published to crates.io - they are all `publish = false`
+# in their own Cargo.toml - so `git_only` is required: without it, release-plz tries to
+# diff against the crates.io registry (where these crates don't exist) instead of git
+# tags, and never finds anything to release.
+[workspace]
+git_only = true
+git_tag_name = "v{{ version }}"
+git_release_name = "v{{ version }}"
+changelog_update = true
+pr_name = "chore: release v{{ version }}"
+pr_branch_prefix = "release-plz-"
+
+# All four crates are one application and always ship together, so they share a single
+# version number rather than versioning independently - matching the
+# `version.workspace = true` every crate already declares. Only one of them (the `eye-saver`
+# binary, below) actually tags and releases; the other three would otherwise each try to
+# create their own tag/release too, since both default to enabled.
+[[package]]
+name = "eye-saver-core"
+version_group = "eye-saver"
+git_tag_enable = false
+git_release_enable = false
+
+[[package]]
+name = "eye-saver-platform"
+version_group = "eye-saver"
+git_tag_enable = false
+git_release_enable = false
+
+[[package]]
+name = "xtask"
+version_group = "eye-saver"
+git_tag_enable = false
+git_release_enable = false
+
+[[package]]
+name = "eye-saver"
+version_group = "eye-saver"
+git_tag_enable = true
+git_release_enable = true

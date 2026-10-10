@@ -1,0 +1,55 @@
+name: Release-plz
+
+# Keeps one pull request up to date proposing the next version, computed from Conventional
+# Commits merged since the last release (see release-plz.toml and README.md's "Releasing"
+# section) - and, separately, cuts the actual tag the moment that PR's version bump lands
+# on main. Nothing here builds an installer: pushing the resulting `v*` tag is what
+# triggers release.yml to do that.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  # Tags and releases, but only does anything the moment Cargo.toml's version has moved
+  # past the latest tag - which in practice only happens right after release-plz-pr's own
+  # PR (below) gets merged. An ordinary feature/fix merge leaves the version untouched, so
+  # this is a silent no-op for every push except that one.
+  release-plz-release:
+    name: Release-plz release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Opens or updates the "chore: release vX.Y.Z" PR. release-plz is idempotent here: if
+  # nothing releasable has landed since the last one, it leaves any existing PR as-is
+  # rather than opening a duplicate or an empty one.
+  release-plz-pr:
+    name: Release-plz PR
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

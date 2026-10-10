@@ -7,6 +7,8 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+# The shipped application, distributed as installers (see packaging/), not crates.io.
+publish = false
 
 [[bin]]
 name = "eye-saver"
