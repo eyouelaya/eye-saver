@@ -59,14 +59,15 @@ is deliberate.
    `%LocalAppData%\Programs\EyeSaver`, so there is **no administrator prompt**.
 3. **SmartScreen will warn you**, because the installer is not code‑signed: click **More
    info** → **Run anyway**.
-4. Start **EyeSaver** from the Start Menu.
+4. EyeSaver starts by itself when the installer finishes, with its settings window open.
+   After that it is in the Start Menu.
 
 An eye appears in the notification area with the minutes remaining drawn into it. Hover for
 the exact time; click for the menu.
 
-> Start it from the **Start Menu shortcut**, at least once. Windows attributes a toast
-> notification to an identity registered on a shortcut, so launching `eye-saver.exe`
-> directly from a file manager can produce reminders with the wrong name.
+> Windows attributes a toast notification to an identity registered on a shortcut, so
+> reminders from a copy of `eye-saver.exe` that was never installed — one unpacked or
+> built by hand — can appear with the wrong name.
 
 ### Uninstall
 
@@ -91,8 +92,9 @@ Click the icon for the menu:
 | **Settings…** | The one and only window |
 | **Quit EyeSaver** | Stop |
 
-Launching EyeSaver while it is already running opens its settings window rather than
-starting a second timer.
+Launching EyeSaver opens its settings window, so that starting it visibly does something.
+If it is already running, that is all a second launch does — there is never a second timer.
+Only a start at login (`--autostart`) is silent.
 
 ### Settings
 

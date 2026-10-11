@@ -33,14 +33,15 @@ EyeSaver - look away from the screen every 20 minutes.
 Usage: eye-saver [options]
 
 Options:
-      --settings   Open the settings window on start.
+      --settings   Open the settings window on start, even with --autostart.
       --autostart  Started by the system at login; do not open any window.
   -v, --verbose    Log at debug level.
   -V, --version    Print the version and exit.
   -h, --help       Print this help and exit.
 
-With no options EyeSaver starts in the menu bar or notification area. Launching it again
-while it is running opens its settings window rather than starting a second timer.";
+With no options EyeSaver starts in the menu bar or notification area and opens its
+settings window, so that launching it visibly does something. Launching it again while it
+is running opens that window too, rather than starting a second timer.";
 
 /// What the command line asked for.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -56,6 +57,17 @@ enum EarlyExit {
     Help,
     Version,
     Unknown(String),
+}
+
+impl Args {
+    /// Whether to open the settings window once the tray is up.
+    ///
+    /// Someone who launches the app by hand gets the window: a tray icon appearing in a
+    /// corner is easy to miss, most of all straight after installing. Only a start at
+    /// login stays silent, unless the window was asked for by name.
+    fn opens_settings(self) -> bool {
+        self.open_settings || !self.autostart
+    }
 }
 
 fn parse_args(raw: impl IntoIterator<Item = String>) -> Result<Args, EarlyExit> {
@@ -158,7 +170,7 @@ fn run(layout: &Layout, lock: instance::InstanceLock, args: Args) -> ExitCode {
         log::warn!("second launches will not open the settings window: {e}");
     }
 
-    let mut app = App::new(engine, pending, clock, store, proxy, args.open_settings);
+    let mut app = App::new(engine, pending, clock, store, proxy, args.opens_settings());
     let result = event_loop.run_app(&mut app);
     drop(lock);
 
@@ -197,6 +209,20 @@ mod tests {
                 autostart: false,
                 verbose: true
             }
+        );
+    }
+
+    #[test]
+    fn a_launch_by_hand_opens_settings_and_a_start_at_login_does_not() {
+        assert!(parse(&[]).unwrap().opens_settings());
+        assert!(parse(&["--verbose"]).unwrap().opens_settings());
+        assert!(!parse(&["--autostart"]).unwrap().opens_settings());
+        assert!(parse(&["--settings"]).unwrap().opens_settings());
+        assert!(
+            parse(&["--autostart", "--settings"])
+                .unwrap()
+                .opens_settings(),
+            "asking for the window by name wins"
         );
     }
 
