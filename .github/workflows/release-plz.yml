@@ -31,7 +31,7 @@ jobs:
       released: ${{ steps.release.outputs.releases_created }}
       tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
@@ -69,7 +69,7 @@ jobs:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
