@@ -40,3 +40,6 @@ pub const APP_ID: &str = "com.eyesaver.app";
 
 /// Human readable application name, used in notifications and installer metadata.
 pub const APP_NAME: &str = "EyeSaver";
+
+/// Where new versions are published. The settings window links here; nothing fetches it.
+pub const RELEASES_URL: &str = "https://github.com/eyouelaya/eye-saver/releases";
