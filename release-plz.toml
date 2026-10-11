@@ -18,6 +18,11 @@ git_release_name = "v{{ version }}"
 changelog_update = true
 pr_name = "chore: release v{{ version }}"
 pr_branch_prefix = "release-plz-"
+# release-plz would otherwise run cargo-semver-checks on the library crates to look for
+# breaking API changes. That is no use here - nothing outside this workspace can depend on
+# them - and it cannot work either: it builds their docs on the Linux runner, where the
+# tray dependencies want GTK/glib and the build fails, taking the release PR with it.
+semver_check = false
 
 # All four crates are one application and always ship together, so they share a single
 # version number rather than versioning independently - matching the
