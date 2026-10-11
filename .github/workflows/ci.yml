@@ -79,3 +79,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo check -p eye-saver-platform --target x86_64-pc-windows-msvc
       - run: cargo check -p eye-saver-platform --target aarch64-pc-windows-msvc
+
+  # Package.wxs is otherwise only compiled by release.yml, which is too late to find out
+  # that it does not build. This proves the installer can be produced; what it does when
+  # run still has to be tried by hand. The MSI is kept as an artifact for exactly that.
+  installer:
+    name: Windows installer builds (x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install WiX
+        # Pinned to v4 for the reasons given in release.yml.
+        run: dotnet tool install --global wix --version 4.0.6
+      - name: Build the installer
+        run: ./packaging/windows/build-msi.ps1 -Arch x64
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-msi
+          path: dist/*.msi
+          retention-days: 7
