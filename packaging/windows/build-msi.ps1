@@ -15,6 +15,8 @@
 
     dotnet tool install --global wix --version 4.0.6
 
+  The Util extension Package.wxs needs is fetched by this script, at the same version.
+
   Set WINDOWS_CERT (and optionally WINDOWS_CERT_PASSWORD) to sign the result; without it
   the MSI is unsigned and SmartScreen will warn on first run.
 #>
@@ -59,12 +61,18 @@ try {
     $msi = Join-Path $dist "EyeSaver-$version-$Arch.msi"
 
     Write-Host "==> building $msi"
+    # Keep in step with the wix version above: an extension from another major version
+    # targets a different schema.
+    & wix extension add --global WixToolset.Util.wixext/4.0.6
+    if ($LASTEXITCODE -ne 0) { throw "could not add the WiX Util extension" }
     & wix build (Join-Path $PSScriptRoot 'Package.wxs') `
+        -ext WixToolset.Util.wixext `
         -arch $Arch `
         -d "Version=$version" `
         -d "ExePath=$exe" `
         -d "IconPath=$icon" `
         -out $msi
+    if ($LASTEXITCODE -ne 0) { throw "wix build failed" }
 
     if ($env:WINDOWS_CERT) {
         Write-Host "==> signing the installer"

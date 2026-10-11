@@ -52,12 +52,55 @@
          that gives its notifications a name already exists, and without waiting, so the
          installer can finish. Not on uninstall, and not for a silent (/qn) install, which
          should not put a window on anyone's screen. -->
+    <!-- Running the installer over an existing install updates it (MajorUpgrade, above),
+         but EyeSaver is normally running at the time, and Windows will not replace an
+         executable that is in use: the update would be put off until the next restart, or
+         stopped by a "files in use" prompt. So stop it first, before InstallValidate goes
+         looking for files in use. This also runs on uninstall, for the same reason.
+
+         It is killed rather than asked to quit because the version being replaced may not
+         know how to be asked, and that is safe: settings are only ever written by an atomic
+         rename (see store.rs). WixQuietExec runs taskkill without flashing a console
+         window. Its exit code is ignored, since "not running" is reported as a failure. -->
+    <SetProperty Id="WixQuietExecCmdLine"
+                 Action="SetCloseEyeSaverCommand"
+                 Value="&quot;[System64Folder]taskkill.exe&quot; /F /IM eye-saver.exe"
+                 Before="CloseEyeSaver"
+                 Sequence="execute" />
+    <CustomAction Id="CloseEyeSaver"
+                  BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+                  DllEntry="WixQuietExec"
+                  Execute="immediate"
+                  Return="ignore" />
+
+    <!-- EyeSaver writes the "start at login" Run value itself; remove it on uninstall so
+         nothing is left pointing at a deleted executable. Only on a real uninstall: an
+         update removes the old version too, and must leave the login item alone, or
+         updating would quietly turn "start at login" off while the settings window went
+         on showing it ticked. (A RemoveRegistryValue element cannot do this - despite the
+         name it deletes when the component is installed, not when it is removed.) -->
+    <SetProperty Id="WixQuietExecCmdLine"
+                 Action="SetRemoveLoginItemCommand"
+                 Value="&quot;[System64Folder]reg.exe&quot; delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v EyeSaver /f"
+                 Before="RemoveLoginItem"
+                 Sequence="execute"
+                 Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    <CustomAction Id="RemoveLoginItem"
+                  BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+                  DllEntry="WixQuietExec"
+                  Execute="immediate"
+                  Return="ignore" />
+
     <CustomAction Id="LaunchEyeSaver"
                   FileRef="EyeSaverExe"
                   ExeCommand=""
                   Execute="immediate"
                   Return="asyncNoWait" />
     <InstallExecuteSequence>
+      <Custom Action="CloseEyeSaver" Before="InstallValidate" />
+      <Custom Action="RemoveLoginItem"
+              After="InstallInitialize"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="LaunchEyeSaver"
               After="InstallFinalize"
               Condition="NOT Installed AND UILevel &gt; 2" />
@@ -82,12 +125,6 @@
           <ShortcutProperty Key="System.AppUserModel.ID" Value="$(var.AppUserModelId)" />
         </Shortcut>
         <RemoveFolder Id="RemoveShortcutFolder" Directory="ShortcutFolder" On="uninstall" />
-        <!-- EyeSaver writes this itself when the user turns on "start at login"; tidy it
-             away on uninstall so nothing is left pointing at a deleted executable. -->
-        <RemoveRegistryValue
-            Root="HKCU"
-            Key="Software\Microsoft\Windows\CurrentVersion\Run"
-            Name="EyeSaver" />
         <RegistryValue
             Root="HKCU"
             Key="Software\EyeSaver"

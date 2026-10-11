@@ -77,6 +77,16 @@ the exact time; click for the menu.
 - **Windows** — Settings → Apps → EyeSaver → Uninstall. This also removes the login‑item
   registry value. Settings live in `%AppData%\EyeSaver`.
 
+### Update
+
+Your settings are kept either way.
+
+- **Windows** — download the newer installer and run it. It replaces the version that is
+  already installed, closing EyeSaver first if it is running and starting the new one
+  when it is done. There is nothing to uninstall beforehand.
+- **macOS** — quit EyeSaver from its menu, drag the new **EyeSaver** from the disk image to
+  Applications, choose **Replace**, and open it again.
+
 ---
 
 ## Using it
