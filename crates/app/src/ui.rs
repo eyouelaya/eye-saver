@@ -129,7 +129,34 @@ pub fn settings_page(ui: &mut egui::Ui, draft: &mut Settings, saved: &Settings) 
         });
     });
 
+    updates_section(ui);
+
     action
+}
+
+/// The "Check for updates" section at the foot of the page.
+///
+/// EyeSaver never goes online by itself, so "checking" is a link for the user to follow
+/// rather than a request made behind their back.
+fn updates_section(ui: &mut egui::Ui) {
+    ui.add_space(14.0);
+    ui.separator();
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new("Check for updates").strong());
+    ui.add_space(2.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        ui.label(
+            egui::RichText::new(concat!(
+                "You have version ",
+                env!("CARGO_PKG_VERSION"),
+                ". Newer ones are on the "
+            ))
+            .weak(),
+        );
+        ui.hyperlink_to("releases page", eye_saver_core::RELEASES_URL);
+        ui.label(egui::RichText::new(".").weak());
+    });
 }
 
 /// A whole-minute field, edited in minutes but stored in seconds.
