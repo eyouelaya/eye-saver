@@ -26,7 +26,7 @@ jobs:
           - { os: windows-latest, target: x86_64-pc-windows-msvc, name: Windows (x86_64) }
           - { os: windows-11-arm, target: aarch64-pc-windows-msvc, name: Windows (aarch64) }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -51,7 +51,7 @@ jobs:
     name: Coverage gate (>=95% of the testable code)
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
@@ -72,7 +72,7 @@ jobs:
     name: Cross-target type check (Windows, from macOS)
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc, aarch64-pc-windows-msvc
@@ -87,7 +87,7 @@ jobs:
     name: Windows installer builds (x64)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install WiX
@@ -96,7 +96,7 @@ jobs:
       - name: Build the installer
         run: ./packaging/windows/build-msi.ps1 -Arch x64
         shell: pwsh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: windows-x64-msi
           path: dist/*.msi
