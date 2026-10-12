@@ -7,7 +7,7 @@
 //! by `eye_saver_core::icon` and handed over as raw pixels - there is no image file to ship
 //! or to go missing.
 
-use eye_saver_core::engine::{IconKind, MenuModel};
+use eye_saver_core::engine::{Badge, IconKind, MenuModel};
 #[cfg(not(target_os = "macos"))]
 use eye_saver_core::icon;
 use eye_saver_core::ports::{HostResult, Tray};
@@ -40,7 +40,7 @@ pub struct TrayAdapter {
     #[cfg(not(target_os = "macos"))]
     icon_size: u32,
     #[cfg(not(target_os = "macos"))]
-    drawn: Option<(IconKind, Option<u16>)>,
+    drawn: Option<(IconKind, Option<Badge>)>,
 }
 
 impl TrayAdapter {
@@ -134,7 +134,7 @@ impl TrayAdapter {
 ///
 /// Only used off macOS: the status item there is text-only and has no icon to draw.
 #[cfg(not(target_os = "macos"))]
-fn render(kind: IconKind, size: u32, badge: Option<u16>) -> Result<Icon, String> {
+fn render(kind: IconKind, size: u32, badge: Option<Badge>) -> Result<Icon, String> {
     let image = icon::render(kind, size, icon::INK_TRAY, badge);
     Icon::from_rgba(image.into_bytes(), size, size).map_err(|e| format!("drawing the icon: {e}"))
 }
@@ -160,13 +160,13 @@ impl Tray for TrayAdapter {
     // engine still emits this effect (the countdown text covers the information
     // instead), and it is simply a no-op on that platform.
     #[cfg(target_os = "macos")]
-    fn set_icon(&mut self, kind: IconKind, badge: Option<u16>) -> HostResult {
+    fn set_icon(&mut self, kind: IconKind, badge: Option<Badge>) -> HostResult {
         let _ = (kind, badge);
         Ok(())
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn set_icon(&mut self, kind: IconKind, badge: Option<u16>) -> HostResult {
+    fn set_icon(&mut self, kind: IconKind, badge: Option<Badge>) -> HostResult {
         if self.drawn == Some((kind, badge)) {
             return Ok(());
         }

@@ -11,7 +11,7 @@
 use std::time::Duration;
 
 use crate::clock::duration_millis;
-use crate::engine::{Phase, ReasonSet, Status, SuspendReason};
+use crate::engine::{Badge, Phase, ReasonSet, Status, SuspendReason};
 use crate::settings::TrayDisplay;
 
 /// Below this much remaining, a minutes-granularity display switches to `m:ss`.
@@ -178,20 +178,55 @@ pub fn until_menu_header_changes(
     }
 }
 
-/// The number to draw into the tray icon on hosts whose tray cannot show text.
+/// The countdown to draw into the tray icon on hosts whose tray cannot show text.
 ///
-/// Minutes while working, seconds during the break, clamped to two digits. `None` means
-/// "draw the plain glyph": either nothing is being counted, or the host shows text instead.
+/// The break is always its seconds, and a minutes display is its minutes. A `19:59`
+/// display does not fit in a square side by side, so it is stacked: minutes above seconds.
+/// Every number is clamped to two digits. `None` means "draw the plain glyph": nothing is
+/// being counted, or the user asked for no countdown.
 #[must_use]
-pub fn icon_badge(remaining: Duration, phase: Phase, status: Status) -> Option<u16> {
+pub fn icon_badge(
+    remaining: Duration,
+    display: TrayDisplay,
+    phase: Phase,
+    status: Status,
+) -> Option<Badge> {
     if status != Status::Running {
         return None;
     }
-    let value = match phase {
-        Phase::Work => ceil_minutes(remaining),
-        Phase::Break => ceil_secs(remaining),
-    };
-    Some(u16::try_from(value.min(99)).unwrap_or(99))
+    let two_digits = |value: u64| u8::try_from(value.min(99)).unwrap_or(99);
+    match (display, phase) {
+        (TrayDisplay::IconOnly, _) => None,
+        (_, Phase::Break) => Some(Badge::Number(u16::from(two_digits(ceil_secs(remaining))))),
+        (TrayDisplay::Minutes, Phase::Work) => Some(Badge::Number(u16::from(two_digits(
+            ceil_minutes(remaining),
+        )))),
+        (TrayDisplay::MmSs, Phase::Work) => {
+            let secs = ceil_secs(remaining);
+            Some(Badge::Stacked {
+                minutes: two_digits(secs / 60),
+                seconds: two_digits(secs % 60),
+            })
+        }
+    }
+}
+
+/// Time until [`icon_badge`] would render differently, or `None` if it never will.
+#[must_use]
+pub fn until_icon_badge_changes(
+    remaining: Duration,
+    display: TrayDisplay,
+    phase: Phase,
+    status: Status,
+) -> Option<Duration> {
+    if status != Status::Running {
+        return None;
+    }
+    match (display, phase) {
+        (TrayDisplay::IconOnly, _) => None,
+        (_, Phase::Break) | (TrayDisplay::MmSs, Phase::Work) => until_next_second(remaining),
+        (TrayDisplay::Minutes, Phase::Work) => until_next_minute(remaining),
+    }
 }
 
 #[cfg(test)]
@@ -435,16 +470,102 @@ mod tests {
     }
 
     #[test]
-    fn icon_badge_shows_minutes_then_break_seconds() {
-        assert_eq!(icon_badge(S(1200), Phase::Work, Status::Running), Some(20));
-        assert_eq!(icon_badge(S(1), Phase::Work, Status::Running), Some(1));
-        assert_eq!(icon_badge(S(20), Phase::Break, Status::Running), Some(20));
+    fn a_minutes_icon_badge_shows_minutes_then_break_seconds() {
+        let badge = |d, phase, status| icon_badge(d, TrayDisplay::Minutes, phase, status);
         assert_eq!(
-            icon_badge(S(180 * 60), Phase::Work, Status::Running),
-            Some(99),
+            badge(S(1200), Phase::Work, Status::Running),
+            Some(Badge::Number(20))
+        );
+        assert_eq!(
+            badge(S(1), Phase::Work, Status::Running),
+            Some(Badge::Number(1))
+        );
+        assert_eq!(
+            badge(S(20), Phase::Break, Status::Running),
+            Some(Badge::Number(20))
+        );
+        assert_eq!(
+            badge(S(180 * 60), Phase::Work, Status::Running),
+            Some(Badge::Number(99)),
             "clamped to 2 digits"
         );
-        assert_eq!(icon_badge(S(600), Phase::Work, Status::Suspended), None);
-        assert_eq!(icon_badge(S(600), Phase::Work, Status::PausedByUser), None);
+        assert_eq!(badge(S(600), Phase::Work, Status::Suspended), None);
+        assert_eq!(badge(S(600), Phase::Work, Status::PausedByUser), None);
+    }
+
+    #[test]
+    fn a_countdown_icon_badge_stacks_minutes_over_seconds() {
+        let badge = |d, phase, status| icon_badge(d, TrayDisplay::MmSs, phase, status);
+        let stacked = |minutes, seconds| Some(Badge::Stacked { minutes, seconds });
+        assert_eq!(badge(S(1200), Phase::Work, Status::Running), stacked(20, 0));
+        assert_eq!(
+            badge(S(1182), Phase::Work, Status::Running),
+            stacked(19, 42)
+        );
+        assert_eq!(
+            badge(MS(59_001), Phase::Work, Status::Running),
+            stacked(1, 0),
+            "rounded up, like every other countdown"
+        );
+        assert_eq!(badge(S(7), Phase::Work, Status::Running), stacked(0, 7));
+        assert_eq!(
+            badge(S(180 * 60), Phase::Work, Status::Running),
+            stacked(99, 0),
+            "the minutes are clamped to 2 digits"
+        );
+        assert_eq!(
+            badge(S(20), Phase::Break, Status::Running),
+            Some(Badge::Number(20)),
+            "the break is short enough to need no minutes"
+        );
+        assert_eq!(badge(S(600), Phase::Work, Status::Suspended), None);
+    }
+
+    #[test]
+    fn an_icon_only_display_has_no_badge_and_never_wakes_for_one() {
+        for phase in [Phase::Work, Phase::Break] {
+            assert_eq!(
+                icon_badge(S(15), TrayDisplay::IconOnly, phase, Status::Running),
+                None
+            );
+            assert_eq!(
+                until_icon_badge_changes(S(15), TrayDisplay::IconOnly, phase, Status::Running),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn the_icon_badge_is_refreshed_exactly_as_often_as_it_changes() {
+        let until = until_icon_badge_changes;
+        assert_eq!(
+            until(MS(90_500), TrayDisplay::MmSs, Phase::Work, Status::Running),
+            Some(MS(500)),
+            "a stacked countdown changes every second"
+        );
+        assert_eq!(
+            until(
+                MS(90_500),
+                TrayDisplay::Minutes,
+                Phase::Work,
+                Status::Running
+            ),
+            Some(MS(30_500)),
+            "minutes change once a minute"
+        );
+        assert_eq!(
+            until(
+                MS(9_500),
+                TrayDisplay::Minutes,
+                Phase::Break,
+                Status::Running
+            ),
+            Some(MS(500)),
+            "the break counts seconds whatever the display"
+        );
+        assert_eq!(
+            until(S(90), TrayDisplay::MmSs, Phase::Work, Status::PausedByUser),
+            None
+        );
     }
 }

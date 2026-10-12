@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use eye_saver_core::clock::Clock;
-use eye_saver_core::engine::{Effect, Engine, Event, SuspendReason, TrayCaps};
+use eye_saver_core::engine::{Badge, Effect, Engine, Event, SuspendReason, TrayCaps};
 use eye_saver_core::ports::{Autostart, IdleSource, SettingsStore};
 use eye_saver_core::runner::{self, Host, Outcome};
 use eye_saver_core::settings::{Settings, TrayDisplay};
@@ -414,7 +414,7 @@ fn the_display_mode_decides_how_often_the_process_wakes() {
 }
 
 #[test]
-fn a_windows_style_tray_keeps_the_countdown_in_the_icon_and_wakes_rarely() {
+fn a_windows_style_tray_stacks_the_live_countdown_into_the_icon() {
     let mut sim = Sim::new(Settings::default(), TrayCaps::ICON_AND_TOOLTIP);
     assert_eq!(
         sim.tray.label, "",
@@ -422,8 +422,42 @@ fn a_windows_style_tray_keeps_the_countdown_in_the_icon_and_wakes_rarely() {
     );
     assert_eq!(
         sim.tray.icon.unwrap().1,
-        Some(20),
-        "so the minutes go into the icon"
+        Some(Badge::Stacked {
+            minutes: 20,
+            seconds: 0
+        }),
+        "so minutes and seconds both go into the icon"
+    );
+
+    sim.run_for(Duration::from_secs(90));
+    assert_eq!(
+        sim.tray.icon.unwrap().1,
+        Some(Badge::Stacked {
+            minutes: 18,
+            seconds: 30
+        })
+    );
+
+    // Showing seconds costs what it costs on any host: a wake for each of them.
+    sim.run_for(Duration::from_secs(60 * 60));
+    assert!(
+        (3500..=3800).contains(&sim.wakeups),
+        "woke {} times in an hour and a half minute",
+        sim.wakeups
+    );
+}
+
+#[test]
+fn a_windows_style_tray_showing_minutes_wakes_rarely() {
+    let settings = Settings {
+        tray_display: TrayDisplay::Minutes,
+        ..Settings::default()
+    };
+    let mut sim = Sim::new(settings, TrayCaps::ICON_AND_TOOLTIP);
+    assert_eq!(
+        sim.tray.icon.unwrap().1,
+        Some(Badge::Number(20)),
+        "the minutes go into the icon"
     );
     assert!(sim.tray.tooltip.contains("20m"));
 

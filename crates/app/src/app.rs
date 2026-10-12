@@ -13,7 +13,7 @@
 
 use std::time::{Duration, Instant};
 
-use eye_saver_core::engine::{Effect, Engine, Event, IconKind, MenuModel};
+use eye_saver_core::engine::{Badge, Effect, Engine, Event, IconKind, MenuModel};
 use eye_saver_core::ports::{Autostart, HostResult, IdleSource as _, ScreenSource as _, Tray, Ui};
 use eye_saver_core::runner::{self, Host};
 use eye_saver_core::screen::ScreenWatch;
@@ -343,7 +343,7 @@ impl Tray for NullTray {
     fn set_tooltip(&mut self, _tooltip: &str) -> HostResult {
         Ok(())
     }
-    fn set_icon(&mut self, _kind: IconKind, _badge: Option<u16>) -> HostResult {
+    fn set_icon(&mut self, _kind: IconKind, _badge: Option<Badge>) -> HostResult {
         Ok(())
     }
     fn set_menu(&mut self, _menu: &MenuModel) -> HostResult {

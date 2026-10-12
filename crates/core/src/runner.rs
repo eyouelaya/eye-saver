@@ -88,7 +88,7 @@ fn describe(effect: &Effect) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::{IconKind, MenuModel, Notification};
+    use crate::engine::{Badge, IconKind, MenuModel, Notification};
     use crate::settings::Settings;
     use crate::testing::{FakeAutostart, FakeNotifier, FakeStore, FakeTray, FakeUi};
 
@@ -136,7 +136,7 @@ mod tests {
             Effect::SetTrayTooltip("EyeSaver - next break in 20m".into()),
             Effect::SetTrayIcon {
                 kind: IconKind::Work,
-                badge: Some(20),
+                badge: Some(Badge::Number(20)),
             },
             Effect::SetMenu(MenuModel {
                 header: "h".into(),
@@ -159,7 +159,7 @@ mod tests {
         assert_eq!(h.notifier.titles(), ["Look away"]);
         assert_eq!(h.tray.label, "19:59");
         assert_eq!(h.tray.tooltip, "EyeSaver - next break in 20m");
-        assert_eq!(h.tray.icon, Some((IconKind::Work, Some(20))));
+        assert_eq!(h.tray.icon, Some((IconKind::Work, Some(Badge::Number(20)))));
         assert!(h.tray.menu.is_some());
         assert_eq!(h.store.saves.get(), 1);
         assert!(h.autostart.is_enabled());

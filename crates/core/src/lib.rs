@@ -31,7 +31,7 @@ pub mod sleep_detect;
 pub mod testing;
 
 pub use clock::{Clock, Mono, Now, Wall};
-pub use engine::{Effect, Engine, Event, IconKind, MenuModel, Phase, Status, SuspendReason};
+pub use engine::{Badge, Effect, Engine, Event, IconKind, MenuModel, Phase, Status, SuspendReason};
 pub use settings::{Settings, TrayDisplay};
 
 /// Reverse-DNS identifier used for the macOS bundle, the Windows `AppUserModelID` and the
