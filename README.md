@@ -102,6 +102,7 @@ Click the icon for the menu:
 | **Reset the timer** | "I've just looked away" — start the interval again |
 | **Pause** / **Resume** | Stop counting. A paused EyeSaver uses no CPU at all |
 | **Settings…** | The one and only window |
+| **Check for updates…** | Opens the releases page in your browser. EyeSaver itself never goes online |
 | **Quit EyeSaver** | Stop |
 
 Launching EyeSaver opens its settings window, so that starting it visibly does something.

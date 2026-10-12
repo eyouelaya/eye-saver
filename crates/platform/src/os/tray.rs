@@ -27,6 +27,8 @@ pub enum MenuChoice {
     TogglePause,
     /// Show the settings window.
     OpenSettings,
+    /// Open the page new versions are published on.
+    CheckForUpdates,
     /// Quit.
     Quit,
 }
@@ -57,6 +59,7 @@ impl TrayAdapter {
         let reset = MenuItem::new("Reset the timer", true, None);
         let pause = MenuItem::new(initial.pause_label, true, None);
         let settings = MenuItem::new("Settings...", true, None);
+        let updates = MenuItem::new("Check for updates...", true, None);
         let quit = MenuItem::new("Quit EyeSaver", true, None);
 
         let separator = PredefinedMenuItem::separator();
@@ -68,6 +71,7 @@ impl TrayAdapter {
             &pause,
             &separator,
             &settings,
+            &updates,
             &quit,
         ] {
             menu.append(item)
@@ -79,6 +83,7 @@ impl TrayAdapter {
             (reset.id().clone(), MenuChoice::ResetCycle),
             (pause.id().clone(), MenuChoice::TogglePause),
             (settings.id().clone(), MenuChoice::OpenSettings),
+            (updates.id().clone(), MenuChoice::CheckForUpdates),
             (quit.id().clone(), MenuChoice::Quit),
         ];
 
