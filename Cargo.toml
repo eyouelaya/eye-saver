@@ -28,6 +28,9 @@ egui = "0.36"
 # "links" is what makes a clicked hyperlink open in the default browser.
 egui-winit = { version = "0.36", default-features = false, features = ["links"] }
 egui_glow = { version = "0.36", default-features = false, features = ["winit"] }
+# Asks the OS to open a URL in the default browser, for the tray's "Check for updates".
+# The same crate egui-winit's "links" feature already brings in; it is not a webview.
+webbrowser = "1.2"
 glutin = "0.32"
 glutin-winit = "0.5"
 raw-window-handle = "0.6"

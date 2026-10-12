@@ -257,6 +257,14 @@ impl ApplicationHandler<UserEvent> for App {
                     MenuChoice::ResetCycle => Event::ResetCycle,
                     MenuChoice::TogglePause => Event::TogglePause,
                     MenuChoice::OpenSettings => Event::OpenSettingsRequested,
+                    // Nothing for the engine to decide: the same link the settings
+                    // window shows, followed without opening the window first.
+                    MenuChoice::CheckForUpdates => {
+                        if let Err(e) = webbrowser::open(eye_saver_core::RELEASES_URL) {
+                            log::warn!("could not open the releases page: {e}");
+                        }
+                        return;
+                    }
                     MenuChoice::Quit => Event::QuitRequested,
                 };
                 self.pump(event_loop, [event]);

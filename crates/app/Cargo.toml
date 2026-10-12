@@ -26,3 +26,4 @@ egui_glow = { workspace = true }
 glutin = { workspace = true }
 glutin-winit = { workspace = true }
 raw-window-handle = { workspace = true }
+webbrowser = { workspace = true }
