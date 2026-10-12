@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/eyouelaya/eye-saver/compare/v0.1.4...v0.1.5) - 2026-10-12
+
+### Added
+
+- be told when the screen changes instead of polling for it
+- credit a break for the screen being off or locked, not for a quiet keyboard
+
 ## [0.1.4](https://github.com/eyouelaya/eye-saver/compare/v0.1.3...v0.1.4) - 2026-10-12
 
 ### Added
