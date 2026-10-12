@@ -24,11 +24,11 @@ pr_branch_prefix = "release-plz-"
 # tray dependencies want GTK/glib and the build fails, taking the release PR with it.
 semver_check = false
 
-# All four crates are one application and always ship together, so they share a single
-# version number rather than versioning independently - matching the
-# `version.workspace = true` every crate already declares. Only one of them (the `eye-saver`
-# binary, below) actually tags and releases; the other three would otherwise each try to
-# create their own tag/release too, since both default to enabled.
+# The crates are one application and always ship together, so they share a single version
+# number rather than versioning independently - matching the `version.workspace = true`
+# every crate already declares. Only one of them (the `eye-saver` binary, below) actually
+# tags and releases; the others would otherwise each try to create their own tag/release
+# too, since both default to enabled.
 [[package]]
 name = "eye-saver-core"
 version_group = "eye-saver"
@@ -41,11 +41,14 @@ version_group = "eye-saver"
 git_tag_enable = false
 git_release_enable = false
 
+# xtask is a build helper (it draws the icons), not something a user receives, so it is
+# left out altogether: no changelog and nothing to release. Its version still moves with
+# the others, because it inherits the workspace version that their bump rewrites. Left in,
+# every release's own Cargo.lock change counted as "a change to xtask" and earned it a
+# changelog entry about nothing.
 [[package]]
 name = "xtask"
-version_group = "eye-saver"
-git_tag_enable = false
-git_release_enable = false
+release = false
 
 [[package]]
 name = "eye-saver"
