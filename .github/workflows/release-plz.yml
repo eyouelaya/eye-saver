@@ -62,8 +62,18 @@ jobs:
   # Opens or updates the "chore: release vX.Y.Z" PR. release-plz is idempotent here: if
   # nothing releasable has landed since the last one, it leaves any existing PR as-is
   # rather than opening a duplicate or an empty one.
+  #
+  # It waits for release-plz-release, and must: on the push that merges a release PR the
+  # two jobs would otherwise start together, and this one would check out the repository
+  # a moment before the new tag is pushed. Seeing only the previous tag, it takes the
+  # version that has just been released for one still waiting to be, and opens a second,
+  # leftover "chore: release" PR for it. Running afterwards, it finds the tag and has
+  # nothing to do. `!cancelled()` keeps it running even if the release job failed, so one
+  # broken release cannot also stop the next release PR from being proposed.
   release-plz-pr:
     name: Release-plz PR
+    needs: release-plz-release
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     concurrency:
       group: release-plz-${{ github.ref }}
