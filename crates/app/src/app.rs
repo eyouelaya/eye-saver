@@ -17,7 +17,7 @@ use eye_saver_core::engine::{Badge, Effect, Engine, Event, IconKind, MenuModel};
 use eye_saver_core::ports::{Autostart, HostResult, IdleSource as _, ScreenSource as _, Tray, Ui};
 use eye_saver_core::runner::{self, Host};
 use eye_saver_core::screen::ScreenWatch;
-use eye_saver_core::{Clock as _, Mono};
+use eye_saver_core::{Clock as _, Mono, Phase, format};
 use eye_saver_platform::os::{self, DesktopNotifier, MenuChoice, TrayAdapter};
 use eye_saver_platform::{FileStore, SystemClock};
 use tray_icon::menu::MenuId;
@@ -89,8 +89,28 @@ impl App {
     fn pump(&mut self, event_loop: &ActiveEventLoop, events: impl IntoIterator<Item = Event>) {
         for event in events {
             let now = self.clock.now();
+            let before = (self.engine.phase(), self.engine.remaining(now));
             let effects = self.engine.handle(event, now);
+            self.log_restart(event, before, now);
             self.dispatch(event_loop, &effects);
+        }
+    }
+
+    /// Notes in the log when the work countdown jumps back up, and what did it.
+    ///
+    /// The engine restarts the interval by itself when it judges a break already taken -
+    /// no input for a while, the screen locked, the machine asleep - and from the outside
+    /// that is indistinguishable from a bug unless something says which rule fired. A
+    /// `Tick` here means a clock rule: a suspend the system never reported, or a tick that
+    /// came too late. Small jumps are left out, so that the restart repeated on every idle
+    /// sample while the user stays away is logged once rather than four times a minute.
+    fn log_restart(&self, event: Event, before: (Phase, Duration), now: eye_saver_core::Now) {
+        let after = (self.engine.phase(), self.engine.remaining(now));
+        if is_restart(before, after) {
+            log::info!(
+                "the work interval restarted with {} left, on {event:?}",
+                format::mm_ss(before.1)
+            );
         }
     }
 
@@ -325,6 +345,14 @@ impl ApplicationHandler<UserEvent> for App {
     }
 }
 
+/// Whether the work countdown jumped back up by enough to be worth a line in the log.
+fn is_restart(before: (Phase, Duration), after: (Phase, Duration)) -> bool {
+    const WORTH_NOTING: Duration = Duration::from_secs(30);
+    before.0 == Phase::Work
+        && after.0 == Phase::Work
+        && after.1.saturating_sub(before.1) >= WORTH_NOTING
+}
+
 /// Records that the engine asked for the settings window, so that the window can be
 /// created once the event loop is in hand.
 #[derive(Debug, Default)]
@@ -356,5 +384,29 @@ impl Tray for NullTray {
     }
     fn set_menu(&mut self, _menu: &MenuModel) -> HostResult {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const S: fn(u64) -> Duration = Duration::from_secs;
+
+    #[test]
+    fn a_countdown_that_jumps_back_up_is_a_restart() {
+        assert!(is_restart((Phase::Work, S(900)), (Phase::Work, S(1200))));
+        assert!(is_restart((Phase::Work, S(1170)), (Phase::Work, S(1200))));
+    }
+
+    #[test]
+    fn ordinary_counting_and_phase_changes_are_not() {
+        // Counting down.
+        assert!(!is_restart((Phase::Work, S(900)), (Phase::Work, S(899))));
+        // Still away: the engine restarts again on every 15 second idle sample.
+        assert!(!is_restart((Phase::Work, S(1185)), (Phase::Work, S(1200))));
+        // The break starting and ending is the timer doing its job.
+        assert!(!is_restart((Phase::Work, S(0)), (Phase::Break, S(20))));
+        assert!(!is_restart((Phase::Break, S(0)), (Phase::Work, S(1200))));
     }
 }
