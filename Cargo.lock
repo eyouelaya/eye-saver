@@ -798,7 +798,7 @@ dependencies = [
 
 [[package]]
 name = "eye-saver"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "egui",
  "egui-winit",
@@ -816,7 +816,7 @@ dependencies = [
 
 [[package]]
 name = "eye-saver-core"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "proptest",
  "serde",
@@ -825,7 +825,7 @@ dependencies = [
 
 [[package]]
 name = "eye-saver-platform"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "block2 0.6.2",
  "eye-saver-core",
@@ -4016,7 +4016,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "eye-saver-core",
  "png",
