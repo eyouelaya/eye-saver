@@ -4,7 +4,7 @@
 //! recording fake in [`crate::testing`]. Nothing else in this crate knows that an
 //! operating system exists.
 
-use crate::engine::{IconKind, MenuModel, Notification};
+use crate::engine::{Badge, IconKind, MenuModel, Notification};
 use crate::settings::Settings;
 
 /// Errors from the host are reported as text: the core never branches on them, it only
@@ -25,12 +25,12 @@ pub trait Tray {
     ///
     /// If the host refuses or is unavailable; the message is for the log.
     fn set_tooltip(&mut self, tooltip: &str) -> HostResult;
-    /// Redraws the icon, optionally with a number drawn into it.
+    /// Redraws the icon, optionally with the countdown drawn in place of the artwork.
     ///
     /// # Errors
     ///
     /// If the host refuses or is unavailable; the message is for the log.
-    fn set_icon(&mut self, kind: IconKind, badge: Option<u16>) -> HostResult;
+    fn set_icon(&mut self, kind: IconKind, badge: Option<Badge>) -> HostResult;
     /// Updates the menu contents.
     ///
     /// # Errors

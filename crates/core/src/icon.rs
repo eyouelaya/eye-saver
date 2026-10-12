@@ -8,11 +8,12 @@
 //! Two shapes are produced:
 //!
 //! * A glyph - an eye, drawn with 3x3 supersampling so the curves are smooth.
-//! * A badge - up to two digits from a crisp 5x7 bitmap font, deliberately *not*
-//!   antialiased. This is how the countdown is shown on hosts whose tray has no text
-//!   label, which on Windows is the only way to put a number in the notification area.
+//! * A badge - digits from a crisp 5x7 bitmap font, deliberately *not* antialiased. This
+//!   is how the countdown is shown on hosts whose tray has no text label, which on Windows
+//!   is the only way to put a number in the notification area. It is either one number as
+//!   large as will fit, or minutes stacked above seconds.
 
-use crate::engine::IconKind;
+use crate::engine::{Badge, IconKind};
 
 /// Pure black: on macOS the tray image is installed as a template image, where only the
 /// alpha channel matters and the system recolours the glyph for the current menu bar.
@@ -142,12 +143,13 @@ impl Rgba {
 
 /// Renders the tray image.
 ///
-/// When `badge` is `Some`, the number is drawn instead of the glyph: a host that cannot
-/// show text next to the icon has nowhere else to put the countdown.
+/// When `badge` is `Some`, the countdown is drawn instead of the glyph: a host that cannot
+/// show text next to the icon has nowhere else to put it.
 #[must_use]
-pub fn render(kind: IconKind, size: u32, ink: [u8; 3], badge: Option<u16>) -> Rgba {
+pub fn render(kind: IconKind, size: u32, ink: [u8; 3], badge: Option<Badge>) -> Rgba {
     match badge {
-        Some(value) => render_badge(kind, size, ink, value),
+        Some(Badge::Number(value)) => render_badge(kind, size, ink, value),
+        Some(Badge::Stacked { minutes, seconds }) => render_stacked(size, ink, minutes, seconds),
         None => render_glyph(kind, size, ink),
     }
 }
@@ -234,6 +236,50 @@ pub fn render_badge(kind: IconKind, size: u32, ink: [u8; 3], value: u16) -> Rgba
         }
     }
     img
+}
+
+/// Renders minutes above seconds, both as two digits: `19:42` for a tray that has only a
+/// square to show it in.
+///
+/// Two digits are 11 font pixels wide and two rows are 15 tall, so the smallest tray icon
+/// there is (16 pixels) holds it at one pixel per font pixel - small, but whole. Both rows
+/// are zero-padded so that nothing moves as the numbers change.
+#[must_use]
+pub fn render_stacked(size: u32, ink: [u8; 3], minutes: u8, seconds: u8) -> Rgba {
+    const BLOCK_W: u32 = GLYPH_W * 2 + 1;
+    const BLOCK_H: u32 = GLYPH_H * 2 + 1;
+
+    let mut img = Rgba::transparent(size, size);
+    let scale = (size / BLOCK_W).min(size / BLOCK_H).max(1);
+    let x0 = size.saturating_sub(BLOCK_W * scale) / 2;
+    let y0 = size.saturating_sub(BLOCK_H * scale) / 2;
+    let px = [ink[0], ink[1], ink[2], 255];
+
+    for (row, value) in (0u32..).zip([minutes.min(99), seconds.min(99)]) {
+        let y = y0 + row * (GLYPH_H + 1) * scale;
+        for (column, digit) in (0u32..).zip([value / 10, value % 10]) {
+            let x = x0 + column * (GLYPH_W + 1) * scale;
+            stamp_digit(&mut img, digit, x, y, scale, px);
+        }
+    }
+    img
+}
+
+/// Draws one digit with its top left corner at `(x0, y0)`, `scale` pixels per font pixel.
+fn stamp_digit(img: &mut Rgba, digit: u8, x0: u32, y0: u32, scale: u32, px: [u8; 4]) {
+    let rows = DIGITS[usize::from(digit % 10)];
+    for (row, bits) in (0u32..).zip(rows) {
+        for col in 0..GLYPH_W {
+            if bits & (1 << (GLYPH_W - 1 - col)) == 0 {
+                continue;
+            }
+            for sy in 0..scale {
+                for sx in 0..scale {
+                    img.set(x0 + col * scale + sx, y0 + row * scale + sy, px);
+                }
+            }
+        }
+    }
 }
 
 /// Renders the application icon: the eye in white on a rounded accent-coloured tile.
@@ -531,9 +577,88 @@ mod tests {
             render_glyph(IconKind::Work, 16, INK_TEMPLATE)
         );
         assert_eq!(
-            render(IconKind::Work, 16, INK_TEMPLATE, Some(7)),
+            render(IconKind::Work, 16, INK_TEMPLATE, Some(Badge::Number(7))),
             render_badge(IconKind::Work, 16, INK_TEMPLATE, 7)
         );
+        let stacked = Badge::Stacked {
+            minutes: 19,
+            seconds: 42,
+        };
+        assert_eq!(
+            render(IconKind::Work, 16, INK_TEMPLATE, Some(stacked)),
+            render_stacked(16, INK_TEMPLATE, 19, 42)
+        );
+    }
+
+    /// The image as rows of `#` and `.`, for comparing against a picture.
+    fn ascii(img: &Rgba) -> Vec<String> {
+        (0..img.height())
+            .map(|y| {
+                (0..img.width())
+                    .map(|x| if img.pixel(x, y)[3] == 0 { '.' } else { '#' })
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_stacked_countdown_fits_whole_in_the_smallest_tray_icon() {
+        let img = render_stacked(16, INK_TRAY, 19, 42);
+        assert_eq!(
+            ascii(&img),
+            [
+                "....#....###....",
+                "...##...#...#...",
+                "....#...#...#...",
+                "....#....####...",
+                "....#.......#...",
+                "....#......#....",
+                "...###...##.....",
+                "................",
+                ".....#...###....",
+                "....##..#...#...",
+                "...#.#......#...",
+                "..#..#.....#....",
+                "..#####...#.....",
+                ".....#...#......",
+                ".....#..#####...",
+                "................",
+            ],
+            "19 above 42"
+        );
+        assert_eq!(
+            img.pixel(4, 0),
+            [INK_TRAY[0], INK_TRAY[1], INK_TRAY[2], 255]
+        );
+    }
+
+    #[test]
+    fn a_stacked_countdown_pads_both_rows_so_nothing_moves() {
+        let rows = ascii(&render_stacked(16, INK_TRAY, 5, 7));
+        let reference = ascii(&render_stacked(16, INK_TRAY, 0, 0));
+        // The tens column of each row is a zero, exactly where it is in 00 over 00.
+        for (row, expected) in rows.iter().zip(&reference) {
+            assert_eq!(row[..8], expected[..8]);
+        }
+        assert_ne!(rows, reference);
+    }
+
+    #[test]
+    fn a_stacked_countdown_scales_up_crisply_and_survives_odd_sizes() {
+        let small = render_stacked(16, INK_TRAY, 19, 42);
+        let large = render_stacked(32, INK_TRAY, 19, 42);
+        assert_eq!(
+            large.alpha_sum(),
+            small.alpha_sum() * 4,
+            "every pixel doubled"
+        );
+        // Too small to hold it, out of range, or empty: drawn as far as it goes, no panic.
+        assert!(render_stacked(8, INK_TRAY, 19, 42).alpha_sum() > 0);
+        assert_eq!(
+            render_stacked(16, INK_TRAY, 200, 200),
+            render_stacked(16, INK_TRAY, 99, 99)
+        );
+        assert!(render_stacked(0, INK_TRAY, 19, 42).as_bytes().is_empty());
     }
 
     #[test]

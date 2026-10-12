@@ -8,7 +8,7 @@ use std::cell::{Cell, RefCell};
 use std::time::Duration;
 
 use crate::clock::{Clock, Mono, Wall};
-use crate::engine::{IconKind, MenuModel, Notification};
+use crate::engine::{Badge, IconKind, MenuModel, Notification};
 use crate::ports::{Autostart, HostResult, IdleSource, Notifier, SettingsStore, Tray, Ui};
 use crate::settings::Settings;
 
@@ -78,7 +78,7 @@ pub struct FakeTray {
     /// Latest tooltip.
     pub tooltip: String,
     /// Latest icon request.
-    pub icon: Option<(IconKind, Option<u16>)>,
+    pub icon: Option<(IconKind, Option<Badge>)>,
     /// Latest menu.
     pub menu: Option<MenuModel>,
     /// How many calls of any kind were made, so tests can assert on churn.
@@ -106,7 +106,7 @@ impl Tray for FakeTray {
         tooltip.clone_into(&mut self.tooltip);
         self.check()
     }
-    fn set_icon(&mut self, kind: IconKind, badge: Option<u16>) -> HostResult {
+    fn set_icon(&mut self, kind: IconKind, badge: Option<Badge>) -> HostResult {
         self.icon = Some((kind, badge));
         self.check()
     }
@@ -286,7 +286,10 @@ mod tests {
         let mut tray = FakeTray::default();
         assert!(tray.set_label("20:00").is_ok());
         assert!(tray.set_tooltip("EyeSaver").is_ok());
-        assert!(tray.set_icon(IconKind::Work, Some(20)).is_ok());
+        assert!(
+            tray.set_icon(IconKind::Work, Some(Badge::Number(20)))
+                .is_ok()
+        );
         let menu = MenuModel {
             header: "h".into(),
             pause_label: "Pause",
@@ -295,7 +298,7 @@ mod tests {
         assert!(tray.set_menu(&menu).is_ok());
         assert_eq!(tray.label, "20:00");
         assert_eq!(tray.tooltip, "EyeSaver");
-        assert_eq!(tray.icon, Some((IconKind::Work, Some(20))));
+        assert_eq!(tray.icon, Some((IconKind::Work, Some(Badge::Number(20)))));
         assert_eq!(tray.menu, Some(menu));
         assert_eq!(tray.calls, 4);
 

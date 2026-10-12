@@ -32,7 +32,7 @@ use std::time::Duration;
 
 use crate::clock::{Mono, Now};
 use crate::format;
-use crate::settings::{Settings, TrayDisplay};
+use crate::settings::Settings;
 use crate::sleep_detect::DriftTracker;
 
 /// Which half of the cycle the timer is in.
@@ -150,6 +150,21 @@ pub enum IconKind {
     Paused,
 }
 
+/// What to draw into the tray icon in place of the artwork, on a host whose tray cannot
+/// show text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Badge {
+    /// One number of up to two digits, as large as will fit.
+    Number(u16),
+    /// Minutes above seconds: the only way to fit `19:42` into a square.
+    Stacked {
+        /// The top row.
+        minutes: u8,
+        /// The bottom row.
+        seconds: u8,
+    },
+}
+
 /// What the host's tray is able to display.
 ///
 /// macOS can put text next to the menu bar icon; the Windows notification area cannot, and
@@ -188,8 +203,9 @@ pub struct TrayView {
     pub tooltip: String,
     /// Which artwork to draw.
     pub icon: IconKind,
-    /// A number to draw into the artwork, when the host has nowhere else to put it.
-    pub badge: Option<u16>,
+    /// The countdown to draw in place of the artwork, when the host has nowhere else to
+    /// put it.
+    pub badge: Option<Badge>,
 }
 
 /// The state the tray menu needs to reflect.
@@ -254,8 +270,8 @@ pub enum Effect {
     SetTrayIcon {
         /// Which artwork.
         kind: IconKind,
-        /// A number to draw into it, if any.
-        badge: Option<u16>,
+        /// The countdown to draw into it, if any.
+        badge: Option<Badge>,
     },
     /// Update the tray menu.
     SetMenu(MenuModel),
@@ -387,10 +403,10 @@ impl Engine {
         } else {
             String::new()
         };
-        let badge = if self.caps.text_label || self.settings.tray_display == TrayDisplay::IconOnly {
+        let badge = if self.caps.text_label {
             None
         } else {
-            format::icon_badge(remaining, self.phase, status)
+            format::icon_badge(remaining, self.settings.tray_display, self.phase, status)
         };
         TrayView {
             label,
@@ -444,9 +460,15 @@ impl Engine {
                 self.phase,
                 status,
             ));
+        } else {
+            deadlines.extend(format::until_icon_badge_changes(
+                remaining,
+                self.settings.tray_display,
+                self.phase,
+                status,
+            ));
         }
-        // The menu header is also the tooltip and sets the icon badge granularity, so it
-        // is relevant on every host.
+        // The menu header is also the tooltip, so it is relevant on every host.
         deadlines.extend(format::until_menu_header_changes(
             remaining, self.phase, status,
         ));
@@ -758,7 +780,7 @@ mod tests {
             .collect()
     }
 
-    fn icons(effects: &[Effect]) -> Vec<(IconKind, Option<u16>)> {
+    fn icons(effects: &[Effect]) -> Vec<(IconKind, Option<Badge>)> {
         effects
             .iter()
             .filter_map(|e| match e {
@@ -1552,15 +1574,31 @@ mod tests {
     // --- hosts without a text label ---------------------------------------------------
 
     #[test]
-    fn a_tray_without_text_draws_the_countdown_into_the_icon() {
+    fn a_tray_without_text_stacks_the_countdown_into_the_icon() {
         let (mut e, effects) = Engine::new(Settings::default(), TrayCaps::ICON_AND_TOOLTIP, T0);
         assert_eq!(labels(&effects), [""], "nowhere to put text");
-        assert_eq!(icons(&effects), [(IconKind::Work, Some(20))]);
+        let stacked = |minutes, seconds| Some(Badge::Stacked { minutes, seconds });
+        assert_eq!(icons(&effects), [(IconKind::Work, stacked(20, 0))]);
         assert!(
             effects
                 .iter()
                 .any(|e| matches!(e, Effect::SetTrayTooltip(t) if t.contains("20m")))
         );
+
+        // The seconds are on show, so it has to be woken for every one of them.
+        assert_eq!(e.next_wake(T0), Some(T0.add(SECOND).mono));
+        let effects = e.handle(Event::Tick, T0.add(SECOND));
+        assert_eq!(icons(&effects), [(IconKind::Work, stacked(19, 59))]);
+    }
+
+    #[test]
+    fn a_tray_without_text_can_show_minutes_alone_and_then_wakes_rarely() {
+        let settings = Settings {
+            tray_display: TrayDisplay::Minutes,
+            ..Settings::default()
+        };
+        let (mut e, effects) = Engine::new(settings, TrayCaps::ICON_AND_TOOLTIP, T0);
+        assert_eq!(icons(&effects), [(IconKind::Work, Some(Badge::Number(20)))]);
 
         // Minutes, not seconds: so it also only needs waking once a minute.
         assert_eq!(
@@ -1570,14 +1608,17 @@ mod tests {
         );
         let at = T0.add(Duration::from_secs(61));
         let effects = e.handle(Event::Tick, at);
-        assert_eq!(icons(&effects), [(IconKind::Work, Some(19))]);
+        assert_eq!(icons(&effects), [(IconKind::Work, Some(Badge::Number(19)))]);
     }
 
     #[test]
     fn a_tray_without_text_counts_break_seconds_in_the_icon() {
         let (mut e, _) = Engine::new(Settings::default(), TrayCaps::ICON_AND_TOOLTIP, T0);
         let effects = e.handle(Event::Tick, T0.add(WORK));
-        assert_eq!(icons(&effects), [(IconKind::Break, Some(20))]);
+        assert_eq!(
+            icons(&effects),
+            [(IconKind::Break, Some(Badge::Number(20)))]
+        );
     }
 
     #[test]

@@ -14,9 +14,9 @@ fresh interval instead of reminding an empty chair.
 
 ```
 ┌─ macOS menu bar ────────────┐     ┌─ Windows notification area ──┐
-│  ⋯   19:42   🔋  Wed 14:03  │     │  ⌃  19  🔊  ᴇɴɢ  14:03       │
+│  ⋯   19:42   🔋  Wed 14:03  │     │  ⌃  ¹⁹₄₂  🔊  ᴇɴɢ  14:03     │
 └─────────────────────────────┘     └──────────────────────────────┘
-   live countdown, as text            minutes, drawn into the icon
+   live countdown, as text            the same, stacked into the icon
 ```
 
 ---
@@ -62,8 +62,10 @@ is deliberate.
 4. EyeSaver starts by itself when the installer finishes, with its settings window open.
    After that it is in the Start Menu.
 
-An eye appears in the notification area with the minutes remaining drawn into it. Hover for
-the exact time; click for the menu.
+The countdown appears in the notification area, drawn into the icon itself because Windows
+has no room for text there: minutes on the top row, seconds on the bottom. If that is too
+small to read, choose **Minutes** in the settings for one large number instead. Hover for
+the time in words; click for the menu.
 
 > Windows attributes a toast notification to an identity registered on a shortcut, so
 > reminders from a copy of `eye-saver.exe` that was never installed — one unpacked or
@@ -203,8 +205,9 @@ assert rather than something you observe with a power meter. The binary's whole 
 read the clock, pump events in, and carry effects out.
 
 A deliberate platform difference lives in `TrayCaps`: macOS can show text beside a menu bar
-icon and Windows cannot, so on Windows the countdown is drawn *into* the icon as digits and
-the refresh schedule is coarser to match. Both behaviours are tested on any host.
+icon and Windows cannot, so on Windows the countdown is drawn *into* the icon as digits —
+minutes stacked above seconds for the live countdown, one large number for "minutes". Both
+behaviours are tested on any host.
 
 ### Dependencies
 
