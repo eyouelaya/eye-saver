@@ -17,6 +17,11 @@ tray-icon = { workspace = true }
 muda = { workspace = true }
 notify-rust = { workspace = true }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = { workspace = true }
+objc2-foundation = { workspace = true }
+objc2-app-kit = { workspace = true }
+
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
     "Win32_Foundation",
@@ -29,5 +34,6 @@ windows = { workspace = true, features = [
     "Win32_System_RemoteDesktop",
     "Win32_System_StationsAndDesktops",
     "Win32_System_SystemServices",
+    "Win32_UI_Accessibility",
     "Win32_UI_WindowsAndMessaging",
 ] }

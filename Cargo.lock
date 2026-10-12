@@ -827,10 +827,13 @@ dependencies = [
 name = "eye-saver-platform"
 version = "0.1.4"
 dependencies = [
+ "block2 0.6.2",
  "eye-saver-core",
  "log",
  "muda",
  "notify-rust",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "tray-icon",
  "windows",
 ]

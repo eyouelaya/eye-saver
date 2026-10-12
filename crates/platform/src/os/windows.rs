@@ -7,6 +7,9 @@
 //!
 //! Windows offers no way to *query* the display's power state, only to subscribe to it, so
 //! a callback keeps the latest answer in a flag for the event loop to read when it looks.
+//! The same callback, and a second one for the desktop being switched (which is what
+//! locking and unlocking are), tell the event loop to look straight away, so that nothing
+//! has to keep asking.
 
 use std::ffi::c_void;
 use std::io;
@@ -21,7 +24,7 @@ use eye_saver_core::ports::{Autostart, HostResult, ScreenSource};
 use eye_saver_core::screen::ScreenStatus;
 use windows::Win32::Foundation::{
     CloseHandle, ERROR_FILE_NOT_FOUND, ERROR_PIPE_CONNECTED, ERROR_SUCCESS, GetLastError, HANDLE,
-    INVALID_HANDLE_VALUE,
+    HWND, INVALID_HANDLE_VALUE,
 };
 use windows::Win32::Storage::FileSystem::{PIPE_ACCESS_INBOUND, ReadFile};
 use windows::Win32::System::Pipes::{
@@ -38,8 +41,10 @@ use windows::Win32::System::StationsAndDesktops::{
     CloseDesktop, DESKTOP_CONTROL_FLAGS, DESKTOP_SWITCHDESKTOP, OpenInputDesktop,
 };
 use windows::Win32::System::SystemServices::GUID_CONSOLE_DISPLAY_STATE;
+use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DEVICE_NOTIFY_CALLBACK, GetSystemMetrics, PBT_POWERSETTINGCHANGE, SM_CXSMICON,
+    DEVICE_NOTIFY_CALLBACK, DispatchMessageW, EVENT_SYSTEM_DESKTOPSWITCH, GetMessageW,
+    GetSystemMetrics, MSG, PBT_POWERSETTINGCHANGE, SM_CXSMICON, WINEVENT_OUTOFCONTEXT,
 };
 use windows::core::{HSTRING, w};
 
@@ -109,9 +114,71 @@ unsafe extern "system" fn on_display_state(
         let setting = unsafe { &*setting.cast::<POWERBROADCAST_SETTING>() };
         if setting.PowerSetting == GUID_CONSOLE_DISPLAY_STATE && setting.DataLength >= 1 {
             DISPLAY_OFF.store(setting.Data[0] == 0, Ordering::Relaxed);
+            super::screen_changed();
         }
     }
     0
+}
+
+/// Subscribes to the display turning off and on and to the screen locking and unlocking.
+pub(super) fn subscribe_to_screen_changes() {
+    // The display: the subscription `Screen` already keeps its flag from.
+    WATCH_DISPLAY.call_once(watch_display);
+
+    // The lock: an event hook is delivered through the message queue of the thread that
+    // set it, so it gets a thread of its own with nothing else to do.
+    if let Err(e) = thread::Builder::new()
+        .name("eye-saver-desktop".into())
+        .spawn(watch_desktop_switches)
+    {
+        log::warn!("locking and unlocking will only be noticed by the periodic look: {e}");
+    }
+}
+
+/// Listens for the input desktop changing until the process exits.
+///
+/// Locking, unlocking, a UAC prompt and a screen saver starting or stopping are all a
+/// switch of desktop - the same thing [`session_is_locked`] reads - so this one event
+/// covers every way that answer can change.
+fn watch_desktop_switches() {
+    // SAFETY: the hook procedure is a plain function that stays valid for the life of the
+    // process, and an out-of-context hook loads nothing into other processes. The message
+    // structure is owned by this frame and only ever handed to the two calls that fill
+    // and read it.
+    unsafe {
+        let hook = SetWinEventHook(
+            EVENT_SYSTEM_DESKTOPSWITCH,
+            EVENT_SYSTEM_DESKTOPSWITCH,
+            None,
+            Some(on_desktop_switch),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT,
+        );
+        if hook.0.is_null() {
+            log::warn!("locking and unlocking will only be noticed by the periodic look");
+            return;
+        }
+        let mut message = MSG::default();
+        // Zero is WM_QUIT and a negative value is an error; either way there is nothing
+        // more to pump.
+        while GetMessageW(&raw mut message, None, 0, 0).0 > 0 {
+            DispatchMessageW(&raw const message);
+        }
+    }
+}
+
+/// Called on the hook's thread each time the input desktop is switched.
+unsafe extern "system" fn on_desktop_switch(
+    _hook: HWINEVENTHOOK,
+    _event: u32,
+    _window: HWND,
+    _object: i32,
+    _child: i32,
+    _thread: u32,
+    _time: u32,
+) {
+    super::screen_changed();
 }
 
 /// Whether the interactive desktop is unavailable to us.

@@ -134,6 +134,9 @@ length away from the screen. Three independent signals feed that decision:
    — machine asleep, display off, session locked — and resumes only when the last of them
    clears. That matters because waking a laptop raises those events in a different order on
    each platform, and on each wake.
+   The lock and the display are not polled for: the system announces each change and
+   EyeSaver looks when it is told, with a look of its own every 30 seconds in case an
+   announcement is ever missed.
 2. **Clock divergence.** If the wall clock has run further than the monotonic clock, the
    machine was suspended even if no event said so. A backstop for a missed notification.
 3. **A tick that arrives impossibly late.** If the process was not scheduled for longer than
@@ -162,10 +165,10 @@ sleep. Measured on an M4 Pro with the default live countdown: **0.0 % CPU**.
 | "Minutes" display | once a minute, once a second for the last minute |
 | "Icon only" display | once a minute |
 | During a 20‑second break | once a second |
-| Checking whether the screen is still on and unlocked | once every 15 seconds |
+| Safety check that the screen is still on and unlocked | once every 30 seconds |
 | **Paused** | **none — the process blocks indefinitely** |
 | **Machine asleep** | **none** |
-| Screen locked or display off | once every 2 seconds, to notice it coming back |
+| Screen locked or display off | once every 30 seconds; the system says when it comes back |
 
 The settings window is *created when you open it and destroyed when you close it*, so
 nothing is laid out, rasterised or presented while it is shut — and egui is reactive, so an

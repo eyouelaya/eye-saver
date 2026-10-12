@@ -13,19 +13,14 @@ use std::time::Duration;
 
 use crate::engine::{Event, SuspendReason};
 
-/// How long to wait before looking again while the timer is suspended.
+/// The longest the host goes without looking at the screen for itself.
 ///
-/// Only used while something is holding the timer back: the app needs to notice the screen
-/// coming back, and nothing else will tell it. While the timer is running or the user has
-/// paused it, no polling happens at all.
-pub const POLL_INTERVAL: Duration = Duration::from_secs(2);
-
-/// The longest the host goes without looking at the screen while the timer is running.
-///
-/// A lock or a dark display only counts as a break once it has lasted the break length, so
-/// noticing it within a few seconds is all that is needed; this is what bounds the wait
-/// when nothing visible is due to change for a minute.
-pub const SAMPLE_INTERVAL: Duration = Duration::from_secs(15);
+/// The host is expected to be *told* when the screen locks, unlocks, goes dark or comes
+/// back, and to look straight away when it is - so this is not how changes are normally
+/// noticed. It is the safety net under that: if a notification is ever missed, the timer
+/// is at most this far behind, whether it is counting or waiting for the screen to return.
+/// A paused timer does not look at all.
+pub const SAMPLE_INTERVAL: Duration = Duration::from_secs(30);
 
 /// What the host sees when it looks at the screen.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

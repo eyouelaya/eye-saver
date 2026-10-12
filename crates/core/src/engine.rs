@@ -475,9 +475,9 @@ impl Engine {
             at = at.min(now.add(d));
         }
 
-        // The screen has to be looked at on a cadence of its own: the host samples it on
-        // every wake, and nothing else would notice it locking or going dark while a
-        // coarse display is asleep for a minute at a time.
+        // The host looks at the screen on every wake, and is told when it changes; this
+        // bounds how long a missed notification can go unnoticed while a coarse display
+        // would otherwise sleep for a minute at a time.
         Some(at.min(now.add(crate::screen::SAMPLE_INTERVAL)))
     }
 
@@ -486,14 +486,14 @@ impl Engine {
     ///
     /// [`Self::next_wake`] answers "when does the timer need me", which is `None` while
     /// nothing is being counted. That is the right answer for a paused timer - the user
-    /// will click something - but not for a suspended one, because the only way to learn
-    /// that the screen came back is to look.
+    /// will click something - but not for a suspended one: the host should be told when
+    /// the screen comes back, and this is the fallback look in case it is not.
     #[must_use]
     pub fn host_deadline(&self, now: Now) -> Option<Mono> {
         match self.status() {
             Status::Suspended => Some(
                 self.next_wake(now)
-                    .unwrap_or_else(|| now.mono.add(crate::screen::POLL_INTERVAL)),
+                    .unwrap_or_else(|| now.mono.add(crate::screen::SAMPLE_INTERVAL)),
             ),
             Status::Running | Status::PausedByUser => self.next_wake(now),
         }
@@ -1414,8 +1414,8 @@ mod tests {
         assert_eq!(e.next_wake(T0), None, "the timer itself needs nothing");
         assert_eq!(
             e.host_deadline(T0),
-            Some(T0.add(crate::screen::POLL_INTERVAL).mono),
-            "but someone has to notice the screen returning"
+            Some(T0.add(crate::screen::SAMPLE_INTERVAL).mono),
+            "but a missed notification must not leave it waiting for ever"
         );
     }
 
@@ -1504,7 +1504,7 @@ mod tests {
         // Minutes, not seconds: so it also only needs waking once a minute.
         assert_eq!(
             e.next_wake(T0),
-            Some(T0.add(Duration::from_secs(15)).mono),
+            Some(T0.add(crate::screen::SAMPLE_INTERVAL).mono),
             "the screen check"
         );
         let at = T0.add(Duration::from_secs(61));

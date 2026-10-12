@@ -37,10 +37,17 @@ raw-window-handle = "0.6"
 
 notify-rust = { version = "4.18", features = ["preview-macos-un"] }
 
-objc2 = "0.6"
-objc2-foundation = "0.3"
-objc2-app-kit = "0.3"
-objc2-core-graphics = "0.3"
+# macOS only: being told when the display sleeps and wakes, which AppKit announces through
+# NSWorkspace and nowhere else.
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "NSNotification",
+    "NSOperation",
+    "NSString",
+] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace"] }
 
 windows = "0.62"
 
