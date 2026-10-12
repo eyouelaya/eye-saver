@@ -14,7 +14,7 @@
 use std::time::{Duration, Instant};
 
 use eye_saver_core::engine::{Badge, Effect, Engine, Event, IconKind, MenuModel};
-use eye_saver_core::ports::{Autostart, HostResult, IdleSource as _, ScreenSource as _, Tray, Ui};
+use eye_saver_core::ports::{Autostart, HostResult, ScreenSource as _, Tray, Ui};
 use eye_saver_core::runner::{self, Host};
 use eye_saver_core::screen::ScreenWatch;
 use eye_saver_core::{Clock as _, Mono};
@@ -46,7 +46,6 @@ pub struct App {
     clock: SystemClock,
     watch: ScreenWatch,
     screen: os::Screen,
-    idle: os::Idle,
     notifier: DesktopNotifier,
     autostart: Box<dyn Autostart>,
     store: FileStore,
@@ -73,7 +72,6 @@ impl App {
             clock,
             watch: ScreenWatch::default(),
             screen: os::Screen,
-            idle: os::Idle,
             notifier: DesktopNotifier::new(),
             autostart: eye_saver_platform::autostart::for_host(),
             store,
@@ -132,11 +130,10 @@ impl App {
         }
     }
 
-    /// One iteration of the loop: look at the screen, look at the keyboard, then tick.
+    /// One iteration of the loop: look at the screen, then tick.
     fn poll_and_tick(&mut self, event_loop: &ActiveEventLoop) {
         let status = self.screen.screen_status();
         let mut events = self.watch.observe(status);
-        events.push(Event::Idle(self.idle.idle_time()));
         events.push(Event::Tick);
         self.pump(event_loop, events);
     }

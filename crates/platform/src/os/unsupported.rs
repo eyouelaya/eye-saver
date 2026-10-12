@@ -5,9 +5,8 @@
 //! reporting honestly that nothing is wired up.
 
 use std::path::PathBuf;
-use std::time::Duration;
 
-use eye_saver_core::ports::{Autostart, HostResult, IdleSource, ScreenSource};
+use eye_saver_core::ports::{Autostart, HostResult, ScreenSource};
 use eye_saver_core::screen::ScreenStatus;
 
 /// Always reports an awake, unlocked screen.
@@ -17,16 +16,6 @@ pub struct Screen;
 impl ScreenSource for Screen {
     fn screen_status(&self) -> ScreenStatus {
         ScreenStatus::AWAKE
-    }
-}
-
-/// Always reports no idle time, so idle never credits a break.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Idle;
-
-impl IdleSource for Idle {
-    fn idle_time(&self) -> Duration {
-        Duration::ZERO
     }
 }
 

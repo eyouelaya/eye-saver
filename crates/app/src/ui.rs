@@ -5,7 +5,7 @@
 //! rather than a change per keystroke - which matters, because changing the interval
 //! restarts the countdown.
 
-use eye_saver_core::settings::{BREAK_SECS, IDLE_SECS, Settings, TrayDisplay, WORK_SECS};
+use eye_saver_core::settings::{BREAK_SECS, Settings, TrayDisplay, WORK_SECS};
 
 /// What the user did with the page this frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -56,10 +56,6 @@ pub fn settings_page(ui: &mut egui::Ui, draft: &mut Settings, saved: &Settings) 
 
             ui.label("Look away for");
             seconds_row(ui, &mut draft.break_duration_secs, BREAK_SECS);
-            ui.end_row();
-
-            ui.label("Count time away as a break after");
-            seconds_row(ui, &mut draft.idle_credit_secs, IDLE_SECS);
             ui.end_row();
 
             ui.label(if cfg!(target_os = "macos") {

@@ -1,6 +1,6 @@
 [package]
 name = "eye-saver-platform"
-description = "Operating-system adapters for EyeSaver: tray, notifications, power events, idle, autostart."
+description = "Operating-system adapters for EyeSaver: tray, notifications, power events, autostart."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -24,10 +24,10 @@ windows = { workspace = true, features = [
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     "Win32_System_Pipes",
+    "Win32_System_Power",
     "Win32_System_Registry",
     "Win32_System_RemoteDesktop",
     "Win32_System_StationsAndDesktops",
-    "Win32_System_SystemInformation",
-    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_SystemServices",
     "Win32_UI_WindowsAndMessaging",
 ] }

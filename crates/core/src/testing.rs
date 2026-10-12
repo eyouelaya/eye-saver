@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use crate::clock::{Clock, Mono, Wall};
 use crate::engine::{Badge, IconKind, MenuModel, Notification};
-use crate::ports::{Autostart, HostResult, IdleSource, Notifier, SettingsStore, Tray, Ui};
+use crate::ports::{Autostart, HostResult, Notifier, SettingsStore, Tray, Ui};
 use crate::settings::Settings;
 
 /// A clock the test moves by hand.
@@ -150,28 +150,6 @@ impl Notifier for FakeNotifier {
             Some(e) => Err(e.clone()),
             None => Ok(()),
         }
-    }
-}
-
-/// A settable idle time.
-#[derive(Debug, Default)]
-pub struct FakeIdle(Cell<Duration>);
-
-impl FakeIdle {
-    /// An idle source reporting `idle`.
-    #[must_use]
-    pub const fn new(idle: Duration) -> Self {
-        Self(Cell::new(idle))
-    }
-    /// Changes the reported idle time.
-    pub fn set(&self, idle: Duration) {
-        self.0.set(idle);
-    }
-}
-
-impl IdleSource for FakeIdle {
-    fn idle_time(&self) -> Duration {
-        self.0.get()
     }
 }
 
@@ -338,15 +316,6 @@ mod tests {
             1,
             "a failed post is still recorded as attempted"
         );
-    }
-
-    #[test]
-    fn the_fake_idle_source_is_settable() {
-        let idle = FakeIdle::new(Duration::from_secs(3));
-        assert_eq!(idle.idle_time(), Duration::from_secs(3));
-        idle.set(Duration::from_secs(90));
-        assert_eq!(idle.idle_time(), Duration::from_secs(90));
-        assert_eq!(FakeIdle::default().idle_time(), Duration::ZERO);
     }
 
     #[test]

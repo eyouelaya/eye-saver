@@ -44,7 +44,6 @@ fn settings() -> impl Strategy<Value = Settings> {
     (
         0u64..40_000,
         0u64..2_000,
-        0u64..4_000,
         prop_oneof![
             Just(TrayDisplay::MmSs),
             Just(TrayDisplay::Minutes),
@@ -53,10 +52,9 @@ fn settings() -> impl Strategy<Value = Settings> {
         any::<bool>(),
         any::<bool>(),
     )
-        .prop_map(|(work, brk, idle, display, login, sound)| Settings {
+        .prop_map(|(work, brk, display, login, sound)| Settings {
             work_interval_secs: work,
             break_duration_secs: brk,
-            idle_credit_secs: idle,
             tray_display: display,
             start_at_login: login,
             notification_sound: sound,
@@ -69,7 +67,6 @@ fn event() -> impl Strategy<Value = Event> {
         3 => reason().prop_map(Event::Suspend),
         3 => reason().prop_map(Event::Resume),
         1 => Just(Event::ResumeAll),
-        5 => (0u64..3_600).prop_map(|s| Event::Idle(Duration::from_secs(s))),
         2 => Just(Event::TogglePause),
         1 => Just(Event::TakeBreakNow),
         1 => Just(Event::ResetCycle),
@@ -171,7 +168,7 @@ proptest! {
                 let ceiling = engine
                     .settings()
                     .work_interval()
-                    .max(engine.settings().idle_sample_interval());
+                    .max(eye_saver_core::screen::SAMPLE_INTERVAL);
                 prop_assert!(
                     at <= now.mono.add(ceiling),
                     "sleeping past the end of the phase stops the clock"

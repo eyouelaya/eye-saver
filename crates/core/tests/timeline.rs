@@ -1,7 +1,7 @@
 //! End-to-end tests that drive the whole application against fake hardware.
 //!
 //! [`Sim`] is deliberately a faithful copy of the real event loop in the `eye-saver`
-//! binary: sleep until the engine's deadline, sample the clocks and the idle time, feed
+//! binary: sleep until the engine's deadline, sample the clocks, feed
 //! the events in, apply the effects. Anything these tests prove therefore holds for the
 //! shipped app too, and they run in milliseconds with no desktop in sight.
 
@@ -9,11 +9,11 @@ use std::time::Duration;
 
 use eye_saver_core::clock::Clock;
 use eye_saver_core::engine::{Badge, Effect, Engine, Event, SuspendReason, TrayCaps};
-use eye_saver_core::ports::{Autostart, IdleSource, SettingsStore};
+use eye_saver_core::ports::{Autostart, SettingsStore};
 use eye_saver_core::runner::{self, Host, Outcome};
 use eye_saver_core::settings::{Settings, TrayDisplay};
 use eye_saver_core::testing::{
-    FakeAutostart, FakeClock, FakeIdle, FakeNotifier, FakeStore, FakeTray, FakeUi,
+    FakeAutostart, FakeClock, FakeNotifier, FakeStore, FakeTray, FakeUi,
 };
 use eye_saver_core::{Mono, Phase, Status};
 
@@ -22,7 +22,6 @@ const MINUTE: Duration = Duration::from_secs(60);
 struct Sim {
     engine: Engine,
     clock: FakeClock,
-    idle: FakeIdle,
     tray: FakeTray,
     notifier: FakeNotifier,
     autostart: FakeAutostart,
@@ -42,7 +41,6 @@ impl Sim {
         let mut sim = Self {
             engine,
             clock,
-            idle: FakeIdle::default(),
             tray: FakeTray::default(),
             notifier: FakeNotifier::default(),
             autostart: FakeAutostart::default(),
@@ -86,12 +84,10 @@ impl Sim {
         self.apply(&effects);
     }
 
-    /// One iteration of the real loop: report idle time, then tick. The engine reads both
-    /// clocks on every call and notices an unannounced suspend by itself.
+    /// One iteration of the real loop: tick. The engine reads both clocks on every call and
+    /// notices an unannounced suspend by itself.
     fn wake(&mut self) {
         self.wakeups += 1;
-        let idle = self.idle.idle_time();
-        self.send(Event::Idle(idle));
         self.send(Event::Tick);
     }
 
@@ -271,35 +267,18 @@ fn an_ntp_correction_is_not_mistaken_for_a_nap() {
 }
 
 #[test]
-fn walking_away_from_the_desk_is_a_break() {
+fn sitting_still_at_the_screen_is_not_a_break() {
+    // An hour of reading with the screen on and unlocked. Nobody touches anything, and
+    // nothing about that says the reader looked away: the reminders keep coming.
     let mut sim = Sim::with_defaults();
-    sim.run_for(Duration::from_secs(15 * 60));
-
-    // An hour-long meeting. Idle time keeps growing; the screen never sleeps.
-    for minute in 1..=60 {
-        sim.idle.set(Duration::from_secs(minute * 60));
-        sim.run_for(MINUTE);
-    }
-    assert_eq!(sim.reminders(), 0, "no reminders to an empty chair");
-
-    // Back at the desk: essentially a whole interval still to go.
-    sim.idle.set(Duration::ZERO);
-    sim.run_for(Duration::from_secs(1));
-    assert!(
-        sim.remaining() > Duration::from_secs(19 * 60),
-        "{:?}",
-        sim.remaining()
+    sim.run_for(Duration::from_secs(60 * 60));
+    assert_eq!(sim.reminders(), 2);
+    assert_eq!(sim.engine.phase(), Phase::Work);
+    assert_eq!(
+        sim.remaining(),
+        Duration::from_secs(40),
+        "two full cycles and most of a third, never restarted"
     );
-}
-
-#[test]
-fn a_quick_coffee_does_not_reset_anything() {
-    let mut sim = Sim::with_defaults();
-    sim.run_for(Duration::from_secs(10 * 60));
-    sim.idle.set(Duration::from_secs(30));
-    sim.run_for(Duration::from_secs(30));
-    sim.idle.set(Duration::ZERO);
-    assert_eq!(sim.remaining(), Duration::from_secs(9 * 60 + 30));
 }
 
 #[test]
@@ -405,7 +384,7 @@ fn the_display_mode_decides_how_often_the_process_wakes() {
         "mm:ss woke {mm_ss} times an hour"
     );
     // The coarser modes only wake for the minute marks, the final minute of each cycle,
-    // the break, and the idle check.
+    // the break, and the look at the screen.
     assert!(minutes < mm_ss / 5, "minutes woke {minutes} times an hour");
     assert!(
         icon_only < minutes,
@@ -463,7 +442,7 @@ fn a_windows_style_tray_showing_minutes_wakes_rarely() {
 
     sim.run_for(Duration::from_secs(60 * 60));
     // One wake per minute for the badge, one per second for each 20 second break, and the
-    // idle check every 15 seconds - which is what dominates, at four an hour per minute.
+    // look at the screen every 15 seconds - which is what dominates, at four a minute.
     assert!(sim.wakeups < 400, "woke {} times an hour", sim.wakeups);
     assert_eq!(sim.reminders(), 2);
 }
@@ -474,9 +453,7 @@ fn a_full_day_of_mixed_interruptions_stays_consistent() {
     for _ in 0..4 {
         sim.run_for(Duration::from_secs(50 * 60));
         sim.suspend_machine(Duration::from_secs(10 * 60));
-        sim.idle.set(Duration::from_secs(5 * 60));
         sim.run_for(Duration::from_secs(5 * 60));
-        sim.idle.set(Duration::ZERO);
         sim.send(Event::TogglePause);
         sim.run_for(Duration::from_secs(10 * 60));
         sim.send(Event::TogglePause);

@@ -12,21 +12,21 @@ pub mod tray;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{Idle, Screen, data_base_dir, executable_path, launch_agents_dir, tray_icon_size};
+pub use macos::{Screen, data_base_dir, executable_path, launch_agents_dir, tray_icon_size};
 
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
 pub use windows::{
-    Idle, RunKey, Screen, data_base_dir, executable_path, listen_for_signals,
-    signal_running_instance, tray_icon_size,
+    RunKey, Screen, data_base_dir, executable_path, listen_for_signals, signal_running_instance,
+    tray_icon_size,
 };
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod unsupported;
 #[cfg(not(any(target_os = "macos", windows)))]
 pub use unsupported::{
-    Idle, Screen, UnsupportedAutostart, data_base_dir, executable_path, tray_icon_size,
+    Screen, UnsupportedAutostart, data_base_dir, executable_path, tray_icon_size,
 };
 
 pub use notify::DesktopNotifier;

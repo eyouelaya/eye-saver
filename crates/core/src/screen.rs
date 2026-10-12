@@ -20,6 +20,13 @@ use crate::engine::{Event, SuspendReason};
 /// paused it, no polling happens at all.
 pub const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
+/// The longest the host goes without looking at the screen while the timer is running.
+///
+/// A lock or a dark display only counts as a break once it has lasted the break length, so
+/// noticing it within a few seconds is all that is needed; this is what bounds the wait
+/// when nothing visible is due to change for a minute.
+pub const SAMPLE_INTERVAL: Duration = Duration::from_secs(15);
+
 /// What the host sees when it looks at the screen.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ScreenStatus {
