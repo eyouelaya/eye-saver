@@ -9,8 +9,8 @@ shows a live countdown, and gets out of the way: no window, no dock icon, no acc
 network access.
 
 It also tries not to nag you about a break you have already had. If your machine slept,
-the screen locked, or you simply walked away from the desk, EyeSaver notices and starts a
-fresh interval instead of reminding an empty chair.
+the screen locked, or the display turned off, EyeSaver notices and starts a fresh interval
+instead of reminding an empty chair.
 
 ```
 ┌─ macOS menu bar ────────────┐     ┌─ Windows notification area ──┐
@@ -115,7 +115,6 @@ Only a start at login (`--autostart`) is silent.
 |---|---|---|
 | Remind me every | 20 minutes | 1–180 |
 | Look away for | 20 seconds | 5–300 |
-| Count time away as a break after | 60 seconds | 15–1800 |
 | Menu bar / tray shows | live countdown | countdown · minutes · icon only |
 | Start when I log in | off | |
 | Play a sound with the reminder | on | |
@@ -128,24 +127,29 @@ out‑of‑range values are clamped, so an upgrade or a typo cannot stop the app
 
 This is the part worth knowing, because it is why EyeSaver stays quiet when it should.
 Counting stops, and a fresh interval begins, whenever your eyes have had at least the break
-length away from the screen. Four independent signals feed that decision:
+length away from the screen. Three independent signals feed that decision:
 
 1. **Sleep and wake.** The lid closes, the machine suspends. On waking, counting does not
    restart until the screen is genuinely back: EyeSaver tracks *every* reason it is waiting
    — machine asleep, display off, session locked — and resumes only when the last of them
    clears. That matters because waking a laptop raises those events in a different order on
    each platform, and on each wake.
+   The lock and the display are not polled for: the system announces each change and
+   EyeSaver looks when it is told, with a look of its own every 30 seconds in case an
+   announcement is ever missed.
 2. **Clock divergence.** If the wall clock has run further than the monotonic clock, the
    machine was suspended even if no event said so. A backstop for a missed notification.
-3. **Idle.** No keyboard or mouse for longer than the threshold and the countdown freezes at
-   full, so you get a whole interval from the moment you come back, and nothing fires while
-   you are in a meeting.
-4. **A tick that arrives impossibly late.** If the process was not scheduled for longer than
+3. **A tick that arrives impossibly late.** If the process was not scheduled for longer than
    a whole break, the break's window has passed; EyeSaver starts over silently rather than
    reminding you about it.
 
-Short interruptions do *not* reset anything: a five‑second screen blank or a thirty‑second
-coffee leaves the countdown exactly where it was.
+Short interruptions do *not* reset anything: a five‑second screen blank leaves the countdown
+exactly where it was.
+
+What EyeSaver does **not** look at is your keyboard and mouse. Sitting still is not looking
+away — reading, watching and listening all leave them untouched — so a quiet keyboard never
+restarts the countdown, and the app never asks the system about your input at all. If you
+step away and want the break counted, lock the screen.
 
 ---
 
@@ -161,10 +165,10 @@ sleep. Measured on an M4 Pro with the default live countdown: **0.0 % CPU**.
 | "Minutes" display | once a minute, once a second for the last minute |
 | "Icon only" display | once a minute |
 | During a 20‑second break | once a second |
-| Checking whether you are at the keyboard | once every 15 seconds |
+| Safety check that the screen is still on and unlocked | once every 30 seconds |
 | **Paused** | **none — the process blocks indefinitely** |
 | **Machine asleep** | **none** |
-| Screen locked or display off | once every 2 seconds, to notice it coming back |
+| Screen locked or display off | once every 30 seconds; the system says when it comes back |
 
 The settings window is *created when you open it and destroyed when you close it*, so
 nothing is laid out, rasterised or presented while it is shut — and egui is reactive, so an

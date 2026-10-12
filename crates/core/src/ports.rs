@@ -49,12 +49,6 @@ pub trait Notifier {
     fn post(&self, notification: &Notification) -> HostResult;
 }
 
-/// How long the user has been away from the keyboard and mouse.
-pub trait IdleSource {
-    /// Seconds since the last input event, as a duration.
-    fn idle_time(&self) -> std::time::Duration;
-}
-
 /// What the screen is doing.
 pub trait ScreenSource {
     /// Reads the current display and lock state.

@@ -89,7 +89,6 @@ mod tests {
         let settings = Settings {
             work_interval_secs: 900,
             break_duration_secs: 25,
-            idle_credit_secs: 120,
             tray_display: TrayDisplay::IconOnly,
             start_at_login: true,
             notification_sound: false,

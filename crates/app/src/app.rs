@@ -14,7 +14,7 @@
 use std::time::{Duration, Instant};
 
 use eye_saver_core::engine::{Badge, Effect, Engine, Event, IconKind, MenuModel};
-use eye_saver_core::ports::{Autostart, HostResult, IdleSource as _, ScreenSource as _, Tray, Ui};
+use eye_saver_core::ports::{Autostart, HostResult, ScreenSource as _, Tray, Ui};
 use eye_saver_core::runner::{self, Host};
 use eye_saver_core::screen::ScreenWatch;
 use eye_saver_core::{Clock as _, Mono};
@@ -35,9 +35,14 @@ pub enum UserEvent {
     Menu(MenuId),
     /// Another launch asked for the settings window.
     ShowSettings,
+    /// The system says the screen locked, unlocked, went dark or came back.
+    ScreenChanged,
     /// egui asked to be repainted after this delay.
     Repaint(Duration),
 }
+
+/// How long after the system announces a screen change to look at the screen again.
+const SCREEN_SETTLE: Duration = Duration::from_secs(1);
 
 /// The application.
 pub struct App {
@@ -46,7 +51,6 @@ pub struct App {
     clock: SystemClock,
     watch: ScreenWatch,
     screen: os::Screen,
-    idle: os::Idle,
     notifier: DesktopNotifier,
     autostart: Box<dyn Autostart>,
     store: FileStore,
@@ -55,6 +59,8 @@ pub struct App {
     proxy: EventLoopProxy<UserEvent>,
     open_settings_on_start: bool,
     repaint_at: Option<Instant>,
+    /// A second look at the screen, shortly after the system announced a change.
+    recheck_screen_at: Option<Instant>,
 }
 
 impl App {
@@ -73,7 +79,6 @@ impl App {
             clock,
             watch: ScreenWatch::default(),
             screen: os::Screen,
-            idle: os::Idle,
             notifier: DesktopNotifier::new(),
             autostart: eye_saver_platform::autostart::for_host(),
             store,
@@ -82,6 +87,7 @@ impl App {
             proxy,
             open_settings_on_start,
             repaint_at: None,
+            recheck_screen_at: None,
         }
     }
 
@@ -132,11 +138,10 @@ impl App {
         }
     }
 
-    /// One iteration of the loop: look at the screen, look at the keyboard, then tick.
+    /// One iteration of the loop: look at the screen, then tick.
     fn poll_and_tick(&mut self, event_loop: &ActiveEventLoop) {
         let status = self.screen.screen_status();
         let mut events = self.watch.observe(status);
-        events.push(Event::Idle(self.idle.idle_time()));
         events.push(Event::Tick);
         self.pump(event_loop, events);
     }
@@ -200,7 +205,10 @@ impl App {
             .engine
             .host_deadline(now)
             .map(|at: Mono| Instant::now() + at.since(now.mono));
-        [engine, self.repaint_at].into_iter().flatten().min()
+        [engine, self.repaint_at, self.recheck_screen_at]
+            .into_iter()
+            .flatten()
+            .min()
     }
 }
 
@@ -243,6 +251,12 @@ impl ApplicationHandler<UserEvent> for App {
                 window.request_redraw();
             }
         }
+        if self
+            .recheck_screen_at
+            .is_some_and(|at| at <= Instant::now())
+        {
+            self.recheck_screen_at = None;
+        }
         self.poll_and_tick(event_loop);
     }
 
@@ -270,6 +284,14 @@ impl ApplicationHandler<UserEvent> for App {
                 self.pump(event_loop, [event]);
             }
             UserEvent::ShowSettings => self.pump(event_loop, [Event::OpenSettingsRequested]),
+            UserEvent::ScreenChanged => {
+                log::debug!("the system announced a screen change");
+                self.poll_and_tick(event_loop);
+                // An announcement can run a moment ahead of the state it announces - the
+                // desktop is still switching, the lock is still engaging - so look once
+                // more shortly afterwards rather than wait for the periodic look.
+                self.recheck_screen_at = Instant::now().checked_add(SCREEN_SETTLE);
+            }
             UserEvent::Repaint(delay) => {
                 if delay.is_zero() {
                     if let Some(window) = &self.window {

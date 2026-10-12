@@ -170,6 +170,13 @@ fn run(layout: &Layout, lock: instance::InstanceLock, args: Args) -> ExitCode {
         log::warn!("second launches will not open the settings window: {e}");
     }
 
+    // The screen locking, unlocking, going dark or coming back is announced rather than
+    // polled for, so that a waiting timer costs nothing until there is something to do.
+    let screen_proxy = proxy.clone();
+    eye_saver_platform::os::watch_screen(move || {
+        let _ = screen_proxy.send_event(UserEvent::ScreenChanged);
+    });
+
     let mut app = App::new(engine, pending, clock, store, proxy, args.opens_settings());
     let result = event_loop.run_app(&mut app);
     drop(lock);

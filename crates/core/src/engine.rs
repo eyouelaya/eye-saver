@@ -8,17 +8,21 @@
 //! # Why a break can be credited without the user doing anything
 //!
 //! The point of the app is to rest the user's eyes, not to make them acknowledge a
-//! notification. If the machine slept, the screen locked or the user simply walked away,
-//! their eyes already rested, so the work interval restarts instead of a reminder firing
-//! at an empty desk. Four independent signals feed that logic, in order of reliability:
+//! notification. If the machine slept, the screen locked or the display went dark, their
+//! eyes already rested, so the work interval restarts instead of a reminder firing at an
+//! empty desk. Three independent signals feed that logic, in order of reliability:
 //!
 //! 1. [`Event::Suspend`] / [`Event::Resume`] - real OS power, lock and display events.
 //! 2. The two clocks disagreeing - the wall clock advancing further than the monotonic
 //!    clock means the machine was suspended even if no event said so. The engine watches
 //!    for this itself on every call, so the host does not have to.
-//! 3. [`Event::Idle`] - no keyboard or mouse input for longer than the threshold.
-//! 4. A [`Event::Tick`] that arrives so late that a whole break could have fitted in the
+//! 3. A [`Event::Tick`] that arrives so late that a whole break could have fitted in the
 //!    gap, which means the process was not scheduled and the break window has passed.
+//!
+//! What is deliberately *not* a signal is the keyboard and mouse going quiet. Reading,
+//! watching and listening all leave them untouched while the eyes stay on the screen, so
+//! "no input for a minute" restarted the countdown on people who had not looked away at
+//! all - and not asking about input means the app has no reason to look at it.
 //!
 //! # Why counting stops on the *set* of reasons
 //!
@@ -241,8 +245,6 @@ pub enum Event {
     Resume(SuspendReason),
     /// Every reason went away at once, e.g. a resume event that implies the rest.
     ResumeAll,
-    /// How long the user has been away from the keyboard and mouse.
-    Idle(Duration),
     /// The user chose Pause, or Resume while paused.
     TogglePause,
     /// The user chose "Take a break now".
@@ -275,7 +277,7 @@ pub enum Effect {
     },
     /// Update the tray menu.
     SetMenu(MenuModel),
-    /// Sleep until this instant, then send [`Event::Idle`] followed by [`Event::Tick`].
+    /// Sleep until this instant, then look at the screen and send [`Event::Tick`].
     ///
     /// The absence of this effect means "nothing is pending": the event loop should block
     /// indefinitely, which is what keeps a paused or suspended app completely off the CPU.
@@ -314,8 +316,6 @@ pub struct Engine {
     /// the wall clock: the monotonic clock does not advance while the machine is asleep,
     /// so a suspend would otherwise look like no time passing at all.
     stopped_at: Now,
-    /// When idle time was last sampled, used to schedule the next sample.
-    last_idle_sample: Mono,
     /// Watches the two clocks for a suspend nobody announced.
     drift: DriftTracker,
     last_view: Option<TrayView>,
@@ -338,7 +338,6 @@ impl Engine {
             ends_at: now.mono.add(settings.work_interval()),
             remaining: settings.work_interval(),
             stopped_at: now,
-            last_idle_sample: now.mono,
             drift: DriftTracker::new(now.mono, now.wall),
             last_view: None,
             last_menu: None,
@@ -476,14 +475,10 @@ impl Engine {
             at = at.min(now.add(d));
         }
 
-        // Idle has to be sampled on a cadence of its own: nothing else would notice the
-        // user walking away while the countdown is still ticking.
-        let interval = self.settings.idle_sample_interval();
-        let mut idle_at = self.last_idle_sample.add(interval);
-        if idle_at <= now {
-            idle_at = now.add(interval);
-        }
-        Some(at.min(idle_at))
+        // The host looks at the screen on every wake, and is told when it changes; this
+        // bounds how long a missed notification can go unnoticed while a coarse display
+        // would otherwise sleep for a minute at a time.
+        Some(at.min(now.add(crate::screen::SAMPLE_INTERVAL)))
     }
 
     /// When the host should wake next, including the poll that notices the screen coming
@@ -491,14 +486,14 @@ impl Engine {
     ///
     /// [`Self::next_wake`] answers "when does the timer need me", which is `None` while
     /// nothing is being counted. That is the right answer for a paused timer - the user
-    /// will click something - but not for a suspended one, because the only way to learn
-    /// that the screen came back is to look.
+    /// will click something - but not for a suspended one: the host should be told when
+    /// the screen comes back, and this is the fallback look in case it is not.
     #[must_use]
     pub fn host_deadline(&self, now: Now) -> Option<Mono> {
         match self.status() {
             Status::Suspended => Some(
                 self.next_wake(now)
-                    .unwrap_or_else(|| now.mono.add(crate::screen::POLL_INTERVAL)),
+                    .unwrap_or_else(|| now.mono.add(crate::screen::SAMPLE_INTERVAL)),
             ),
             Status::Running | Status::PausedByUser => self.next_wake(now),
         }
@@ -526,7 +521,6 @@ impl Engine {
             Event::ResumeAll => self.transition(now, Credit::IfLongEnough, |s| {
                 s.reasons.clear();
             }),
-            Event::Idle(idle_for) => self.on_idle(idle_for, now),
             Event::TogglePause => {
                 let credit = if self.paused_by_user {
                     Credit::IfLongEnough
@@ -575,19 +569,6 @@ impl Engine {
         }
         effects.extend(self.render(now));
         effects
-    }
-
-    fn on_idle(&mut self, idle_for: Duration, now: Now) -> Vec<Effect> {
-        self.last_idle_sample = now.mono;
-        if idle_for < self.settings.idle_credit() || !self.is_counting() {
-            return self.render(now);
-        }
-        // The user has not touched the machine for longer than the threshold, so their
-        // eyes are already resting. Restarting the interval on every sample while they
-        // stay away means the countdown effectively freezes at full: no reminder fires at
-        // an empty desk, and they get a whole interval from the moment they come back.
-        self.begin(Phase::Work, now);
-        self.render(now)
     }
 
     fn on_take_break_now(&mut self, now: Now) -> Vec<Effect> {
@@ -1127,88 +1108,26 @@ mod tests {
         assert_eq!(e.remaining(at), Duration::from_secs(600));
     }
 
-    // --- idle ----------------------------------------------------------------------
+    // --- the screen cadence -----------------------------------------------------------
 
     #[test]
-    fn idle_below_the_threshold_is_ignored() {
-        let mut e = engine();
-        let at = T0.add(Duration::from_secs(600));
-        e.handle(Event::Idle(Duration::from_secs(59)), at);
-        assert_eq!(e.remaining(at), Duration::from_secs(600));
-    }
-
-    #[test]
-    fn idle_past_the_threshold_counts_as_looking_away() {
-        let mut e = engine();
-        let at = T0.add(Duration::from_secs(600));
-        e.handle(Event::Idle(Duration::from_secs(60)), at);
-        assert_eq!(e.remaining(at), WORK);
-    }
-
-    #[test]
-    fn a_long_absence_never_fires_a_reminder_at_an_empty_desk() {
-        let mut e = engine();
-        let mut at = T0;
-        let mut fired = 0;
-        // Fifty minutes away, sampled on the engine's own cadence.
-        for _ in 0..200 {
-            at = at.add(Duration::from_secs(15));
-            fired += notes(&e.handle(Event::Idle(Duration::from_secs(900)), at)).len();
-            fired += notes(&e.handle(Event::Tick, at)).len();
-        }
-        assert_eq!(fired, 0);
-        assert_eq!(
-            e.remaining(at),
-            WORK,
-            "the countdown stays pinned while they are away"
-        );
-
-        // On their return essentially the whole interval is still ahead of them: the
-        // last credit landed on the previous sample, at most one sample period ago.
-        at = at.add(Duration::from_secs(15));
-        e.handle(Event::Idle(Duration::ZERO), at);
-        assert_eq!(
-            e.remaining(at),
-            WORK.saturating_sub(Duration::from_secs(15))
-        );
-        let later = at.add(Duration::from_secs(60));
-        e.handle(Event::Tick, later);
-        assert_eq!(
-            e.remaining(later),
-            Duration::from_secs(1125),
-            "and then it ticks normally"
-        );
-    }
-
-    #[test]
-    fn idle_while_suspended_does_not_disturb_the_frozen_countdown() {
-        let mut e = engine();
-        e.handle(Event::Tick, T0.add(Duration::from_secs(600)));
-        let at = T0.add(Duration::from_secs(600));
-        e.handle(Event::Suspend(SuspendReason::Sleep), at);
-        e.handle(Event::Idle(Duration::from_secs(900)), at);
-        assert_eq!(e.remaining(at), Duration::from_secs(600));
-    }
-
-    #[test]
-    fn idle_during_a_break_starts_the_next_work_interval() {
-        let mut e = engine();
-        e.handle(Event::Tick, T0.add(WORK));
-        let at = T0.add(WORK).add(Duration::from_secs(5));
-        e.handle(Event::Idle(Duration::from_secs(300)), at);
-        assert_eq!(e.phase(), Phase::Work);
-        assert_eq!(e.remaining(at), WORK);
-    }
-
-    #[test]
-    fn sampling_idle_moves_the_next_sample_along() {
+    fn a_coarse_display_is_still_woken_often_enough_to_watch_the_screen() {
         let mut e = engine_with(Settings {
             tray_display: TrayDisplay::IconOnly,
             ..Settings::default()
         });
-        // With no text to refresh, the idle cadence is what sets the wake-up.
-        let effects = e.handle(Event::Idle(Duration::ZERO), T0);
-        assert_eq!(wake(&effects), Some(T0.add(Duration::from_secs(15)).mono));
+        // With no text to refresh, looking at the screen is what sets the wake-up.
+        let effects = e.handle(Event::Tick, T0);
+        assert_eq!(
+            wake(&effects),
+            Some(T0.add(crate::screen::SAMPLE_INTERVAL).mono)
+        );
+        // And it is measured from each wake, so the gap never grows.
+        let at = T0.add(Duration::from_secs(7));
+        assert_eq!(
+            e.next_wake(at),
+            Some(at.add(crate::screen::SAMPLE_INTERVAL).mono)
+        );
     }
 
     // --- user actions ---------------------------------------------------------------
@@ -1444,41 +1363,24 @@ mod tests {
     }
 
     #[test]
-    fn a_minutes_display_wakes_on_the_minute_until_the_last_one() {
+    fn a_minutes_display_wakes_only_for_the_screen_check_until_the_last_minute() {
         let mut e = engine_with(Settings {
             tray_display: TrayDisplay::Minutes,
-            idle_credit_secs: 1800,
             ..Settings::default()
         });
-        assert_eq!(e.next_wake(T0), Some(T0.add(Duration::from_secs(60)).mono));
+        assert_eq!(
+            e.next_wake(T0),
+            Some(T0.add(crate::screen::SAMPLE_INTERVAL).mono),
+            "the label is good for a minute; the screen is not left that long"
+        );
+        // Close to the minute mark it is the label that is due first.
+        let at = T0.add(Duration::from_secs(55));
+        assert_eq!(e.next_wake(at), Some(T0.add(Duration::from_secs(60)).mono));
 
         // Inside the final minute the display switches to seconds, and so does the clock.
         let late = T0.add(Duration::from_secs(1170));
         e.handle(Event::Tick, late);
         assert_eq!(e.next_wake(late), Some(late.add(SECOND).mono));
-    }
-
-    #[test]
-    fn an_icon_only_display_wakes_only_as_often_as_the_menu_and_idle_check_need() {
-        let mut e = engine_with(Settings {
-            tray_display: TrayDisplay::IconOnly,
-            idle_credit_secs: 1800,
-            ..Settings::default()
-        });
-        assert_eq!(e.next_wake(T0), Some(T0.add(Duration::from_secs(60)).mono));
-        let at = T0.add(Duration::from_secs(60));
-        e.handle(Event::Tick, at);
-        assert_eq!(e.next_wake(at), Some(at.add(Duration::from_secs(60)).mono));
-    }
-
-    #[test]
-    fn the_idle_cadence_caps_how_long_the_app_sleeps() {
-        let e = engine_with(Settings {
-            tray_display: TrayDisplay::IconOnly,
-            idle_credit_secs: 20,
-            ..Settings::default()
-        });
-        assert_eq!(e.next_wake(T0), Some(T0.add(Duration::from_secs(5)).mono));
     }
 
     #[test]
@@ -1512,8 +1414,8 @@ mod tests {
         assert_eq!(e.next_wake(T0), None, "the timer itself needs nothing");
         assert_eq!(
             e.host_deadline(T0),
-            Some(T0.add(crate::screen::POLL_INTERVAL).mono),
-            "but someone has to notice the screen returning"
+            Some(T0.add(crate::screen::SAMPLE_INTERVAL).mono),
+            "but a missed notification must not leave it waiting for ever"
         );
     }
 
@@ -1545,7 +1447,6 @@ mod tests {
     fn every_event_except_quit_re_arms_the_wake_up_while_counting() {
         let events = [
             Event::Tick,
-            Event::Idle(Duration::ZERO),
             Event::ResetCycle,
             Event::TakeBreakNow,
             Event::OpenSettingsRequested,
@@ -1603,8 +1504,8 @@ mod tests {
         // Minutes, not seconds: so it also only needs waking once a minute.
         assert_eq!(
             e.next_wake(T0),
-            Some(T0.add(Duration::from_secs(15)).mono),
-            "idle cadence"
+            Some(T0.add(crate::screen::SAMPLE_INTERVAL).mono),
+            "the screen check"
         );
         let at = T0.add(Duration::from_secs(61));
         let effects = e.handle(Event::Tick, at);

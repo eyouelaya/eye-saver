@@ -1,28 +1,38 @@
 //! Windows adapters.
 //!
-//! Three things are asked of the system: whether the session is locked, how long since the
-//! last input, and whether another instance is already running. Machine suspend is not
-//! asked about - the engine infers it from the wall clock having run ahead of the
-//! monotonic clock - and neither is the display power state, because Windows offers no way
-//! to query it (only to subscribe to it), and a dark screen produces no input anyway, so
-//! the idle signal already covers that case.
+//! Three things are asked of the system: whether the session is locked, whether the
+//! display is on, and whether another instance is already running. The keyboard and mouse
+//! are not asked about at all. Neither is machine suspend - the engine infers it from the
+//! wall clock having run ahead of the monotonic clock.
+//!
+//! Windows offers no way to *query* the display's power state, only to subscribe to it, so
+//! a callback keeps the latest answer in a flag for the event loop to read when it looks.
+//! The same callback, and a second one for the desktop being switched (which is what
+//! locking and unlocking are), tell the event loop to look straight away, so that nothing
+//! has to keep asking.
 
+use std::ffi::c_void;
 use std::io;
 use std::path::PathBuf;
+use std::ptr;
+use std::sync::Once;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
 
 use eye_saver_core::autostart_spec::{RUN_KEY_NAME, RUN_KEY_PATH, run_key_command};
-use eye_saver_core::ports::{Autostart, HostResult, IdleSource, ScreenSource};
+use eye_saver_core::ports::{Autostart, HostResult, ScreenSource};
 use eye_saver_core::screen::ScreenStatus;
 use windows::Win32::Foundation::{
-    CloseHandle, ERROR_FILE_NOT_FOUND, ERROR_PIPE_CONNECTED, GetLastError, HANDLE,
-    INVALID_HANDLE_VALUE,
+    CloseHandle, ERROR_FILE_NOT_FOUND, ERROR_PIPE_CONNECTED, ERROR_SUCCESS, GetLastError, HANDLE,
+    HWND, INVALID_HANDLE_VALUE,
 };
 use windows::Win32::Storage::FileSystem::{PIPE_ACCESS_INBOUND, ReadFile};
 use windows::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE,
     PIPE_WAIT,
+};
+use windows::Win32::System::Power::{
+    DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS, POWERBROADCAST_SETTING, PowerSettingRegisterNotification,
 };
 use windows::Win32::System::Registry::{
     HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
@@ -30,25 +40,145 @@ use windows::Win32::System::Registry::{
 use windows::Win32::System::StationsAndDesktops::{
     CloseDesktop, DESKTOP_CONTROL_FLAGS, DESKTOP_SWITCHDESKTOP, OpenInputDesktop,
 };
-use windows::Win32::System::SystemInformation::GetTickCount;
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
-use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSMICON};
+use windows::Win32::System::SystemServices::GUID_CONSOLE_DISPLAY_STATE;
+use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook};
+use windows::Win32::UI::WindowsAndMessaging::{
+    DEVICE_NOTIFY_CALLBACK, DispatchMessageW, EVENT_SYSTEM_DESKTOPSWITCH, GetMessageW,
+    GetSystemMetrics, MSG, PBT_POWERSETTINGCHANGE, SM_CXSMICON, WINEVENT_OUTOFCONTEXT,
+};
 use windows::core::{HSTRING, w};
 
 /// The pipe a second launch writes to, to ask the running instance for its window.
 const PIPE_PATH: &str = r"\\.\pipe\EyeSaver.instance";
 
-/// Reads the lock state of the session.
+/// Whether Windows last reported the display as off. Written by [`on_display_state`], on
+/// a thread the system owns.
+static DISPLAY_OFF: AtomicBool = AtomicBool::new(false);
+/// Subscribes to the display state the first time anyone asks about the screen.
+static WATCH_DISPLAY: Once = Once::new();
+
+/// Reads the display and lock state.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Screen;
 
 impl ScreenSource for Screen {
     fn screen_status(&self) -> ScreenStatus {
+        WATCH_DISPLAY.call_once(watch_display);
         ScreenStatus {
-            display_asleep: false,
+            display_asleep: DISPLAY_OFF.load(Ordering::Relaxed),
             locked: session_is_locked(),
         }
     }
+}
+
+/// Asks to be told whenever the display turns off or on, for the life of the process.
+///
+/// Windows calls back once straight away with the current state, so the flag is right
+/// from the start. If the subscription is refused the display is simply assumed to be on,
+/// which leaves the lock screen and the clocks to notice an absence.
+fn watch_display() {
+    let parameters = DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS {
+        Callback: Some(on_display_state),
+        Context: ptr::null_mut(),
+    };
+    let setting = GUID_CONSOLE_DISPLAY_STATE;
+    let mut registration = ptr::null_mut();
+    // SAFETY: with DEVICE_NOTIFY_CALLBACK the "recipient" is a pointer to the parameters,
+    // which are read during the call and outlive it; the GUID and the out-pointer are
+    // valid for the call. The registration is never released: it is wanted until exit.
+    let result = unsafe {
+        PowerSettingRegisterNotification(
+            &raw const setting,
+            DEVICE_NOTIFY_CALLBACK,
+            HANDLE((&raw const parameters).cast_mut().cast()),
+            &raw mut registration,
+        )
+    };
+    if result != ERROR_SUCCESS {
+        log::warn!("the display turning off will not be noticed: {result:?}");
+    }
+}
+
+/// Records the display state Windows reports: 0 is off, 1 is on, 2 is dimmed.
+///
+/// Dimmed counts as on - there is still something to look at.
+unsafe extern "system" fn on_display_state(
+    _context: *const c_void,
+    kind: u32,
+    setting: *const c_void,
+) -> u32 {
+    if kind == PBT_POWERSETTINGCHANGE && !setting.is_null() {
+        // SAFETY: for this notification type Windows passes a valid, aligned
+        // POWERBROADCAST_SETTING that lives for the duration of the callback, and the
+        // length is checked before the payload is read.
+        let setting = unsafe { &*setting.cast::<POWERBROADCAST_SETTING>() };
+        if setting.PowerSetting == GUID_CONSOLE_DISPLAY_STATE && setting.DataLength >= 1 {
+            DISPLAY_OFF.store(setting.Data[0] == 0, Ordering::Relaxed);
+            super::screen_changed();
+        }
+    }
+    0
+}
+
+/// Subscribes to the display turning off and on and to the screen locking and unlocking.
+pub(super) fn subscribe_to_screen_changes() {
+    // The display: the subscription `Screen` already keeps its flag from.
+    WATCH_DISPLAY.call_once(watch_display);
+
+    // The lock: an event hook is delivered through the message queue of the thread that
+    // set it, so it gets a thread of its own with nothing else to do.
+    if let Err(e) = thread::Builder::new()
+        .name("eye-saver-desktop".into())
+        .spawn(watch_desktop_switches)
+    {
+        log::warn!("locking and unlocking will only be noticed by the periodic look: {e}");
+    }
+}
+
+/// Listens for the input desktop changing until the process exits.
+///
+/// Locking, unlocking, a UAC prompt and a screen saver starting or stopping are all a
+/// switch of desktop - the same thing [`session_is_locked`] reads - so this one event
+/// covers every way that answer can change.
+fn watch_desktop_switches() {
+    // SAFETY: the hook procedure is a plain function that stays valid for the life of the
+    // process, and an out-of-context hook loads nothing into other processes. The message
+    // structure is owned by this frame and only ever handed to the two calls that fill
+    // and read it.
+    unsafe {
+        let hook = SetWinEventHook(
+            EVENT_SYSTEM_DESKTOPSWITCH,
+            EVENT_SYSTEM_DESKTOPSWITCH,
+            None,
+            Some(on_desktop_switch),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT,
+        );
+        if hook.0.is_null() {
+            log::warn!("locking and unlocking will only be noticed by the periodic look");
+            return;
+        }
+        let mut message = MSG::default();
+        // Zero is WM_QUIT and a negative value is an error; either way there is nothing
+        // more to pump.
+        while GetMessageW(&raw mut message, None, 0, 0).0 > 0 {
+            DispatchMessageW(&raw const message);
+        }
+    }
+}
+
+/// Called on the hook's thread each time the input desktop is switched.
+unsafe extern "system" fn on_desktop_switch(
+    _hook: HWINEVENTHOOK,
+    _event: u32,
+    _window: HWND,
+    _object: i32,
+    _child: i32,
+    _thread: u32,
+    _time: u32,
+) {
+    super::screen_changed();
 }
 
 /// Whether the interactive desktop is unavailable to us.
@@ -67,28 +197,6 @@ fn session_is_locked() -> bool {
             }
             Err(_) => true,
         }
-    }
-}
-
-/// Reads how long the user has been away from the keyboard and mouse.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Idle;
-
-impl IdleSource for Idle {
-    fn idle_time(&self) -> Duration {
-        let mut info = LASTINPUTINFO {
-            cbSize: u32::try_from(size_of::<LASTINPUTINFO>()).unwrap_or(0),
-            dwTime: 0,
-        };
-        // SAFETY: `info` is a correctly sized, initialised struct that outlives the call.
-        let ok = unsafe { GetLastInputInfo(&raw mut info) }.as_bool();
-        if !ok {
-            return Duration::ZERO;
-        }
-        // SAFETY: a plain numeric call.
-        let now = unsafe { GetTickCount() };
-        // Wrapping, because the tick count rolls over roughly every 49 days.
-        Duration::from_millis(u64::from(now.wrapping_sub(info.dwTime)))
     }
 }
 

@@ -43,12 +43,9 @@ impl TrayDisplay {
 pub const WORK_SECS: (u64, u64) = (60, 180 * 60);
 /// Smallest and largest accepted break length.
 pub const BREAK_SECS: (u64, u64) = (5, 300);
-/// Smallest and largest accepted idle-credit threshold.
-pub const IDLE_SECS: (u64, u64) = (15, 1800);
 
 const DEFAULT_WORK_SECS: u64 = 20 * 60;
 const DEFAULT_BREAK_SECS: u64 = 20;
-const DEFAULT_IDLE_SECS: u64 = 60;
 
 /// Everything the user can configure.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,9 +55,6 @@ pub struct Settings {
     pub work_interval_secs: u64,
     /// How long the look-away break lasts.
     pub break_duration_secs: u64,
-    /// Being idle (no keyboard or mouse input) for at least this long counts as a break
-    /// already taken, and restarts the work interval.
-    pub idle_credit_secs: u64,
     /// What the tray item shows.
     pub tray_display: TrayDisplay,
     /// Whether the app launches when the user logs in.
@@ -74,7 +68,6 @@ impl Default for Settings {
         Self {
             work_interval_secs: DEFAULT_WORK_SECS,
             break_duration_secs: DEFAULT_BREAK_SECS,
-            idle_credit_secs: DEFAULT_IDLE_SECS,
             tray_display: TrayDisplay::default(),
             start_at_login: false,
             notification_sound: true,
@@ -95,29 +88,11 @@ impl Settings {
         Duration::from_secs(self.break_duration_secs)
     }
 
-    /// The idle-credit threshold as a [`Duration`].
-    #[must_use]
-    pub const fn idle_credit(&self) -> Duration {
-        Duration::from_secs(self.idle_credit_secs)
-    }
-
-    /// How often idle time needs sampling.
-    ///
-    /// Sampling has to be frequent enough to notice an absence promptly but is pointless
-    /// at a finer grain than that, so it is derived from the threshold instead of being a
-    /// fixed poll rate. With the default 60 s threshold this is 15 s.
-    #[must_use]
-    pub const fn idle_sample_interval(&self) -> Duration {
-        let quarter = self.idle_credit_secs / 4;
-        Duration::from_secs(if quarter < 5 { 5 } else { quarter })
-    }
-
     /// Returns a copy with every value forced inside its accepted range.
     #[must_use]
     pub fn clamped(mut self) -> Self {
         self.work_interval_secs = self.work_interval_secs.clamp(WORK_SECS.0, WORK_SECS.1);
         self.break_duration_secs = self.break_duration_secs.clamp(BREAK_SECS.0, BREAK_SECS.1);
-        self.idle_credit_secs = self.idle_credit_secs.clamp(IDLE_SECS.0, IDLE_SECS.1);
         self
     }
 
@@ -164,10 +139,10 @@ impl Settings {
         let body = toml::to_string_pretty(&self).expect("Settings is always serialisable");
         format!(
             "# EyeSaver settings. Edit while the app is closed, or use the settings window.\n\
-             # work-interval-secs: {}-{}  break-duration-secs: {}-{}  idle-credit-secs: {}-{}\n\
+             # work-interval-secs: {}-{}  break-duration-secs: {}-{}\n\
              # tray-display: \"mm-ss\" | \"minutes\" | \"icon-only\"\n\
              {body}",
-            WORK_SECS.0, WORK_SECS.1, BREAK_SECS.0, BREAK_SECS.1, IDLE_SECS.0, IDLE_SECS.1,
+            WORK_SECS.0, WORK_SECS.1, BREAK_SECS.0, BREAK_SECS.1,
         )
     }
 }
@@ -193,7 +168,6 @@ mod tests {
         let s = Settings::default();
         assert_eq!(s.work_interval(), Duration::from_secs(1200));
         assert_eq!(s.break_duration(), Duration::from_secs(20));
-        assert_eq!(s.idle_credit(), Duration::from_secs(60));
         assert_eq!(s.tray_display, TrayDisplay::MmSs);
         assert!(!s.start_at_login);
         assert!(s.notification_sound);
@@ -201,53 +175,27 @@ mod tests {
     }
 
     #[test]
-    fn idle_sample_interval_tracks_threshold_with_a_floor() {
-        let mut s = Settings::default();
-        assert_eq!(s.idle_sample_interval(), Duration::from_secs(15));
-        s.idle_credit_secs = 1800;
-        assert_eq!(s.idle_sample_interval(), Duration::from_secs(450));
-        s.idle_credit_secs = 15;
-        assert_eq!(
-            s.idle_sample_interval(),
-            Duration::from_secs(5),
-            "floor of 5s applies"
-        );
-        s.idle_credit_secs = 0;
-        assert_eq!(s.idle_sample_interval(), Duration::from_secs(5));
-    }
-
-    #[test]
     fn clamping_pins_every_field_to_its_range() {
         let low = Settings {
             work_interval_secs: 0,
             break_duration_secs: 0,
-            idle_credit_secs: 0,
             ..Settings::default()
         }
         .clamped();
         assert_eq!(
-            (
-                low.work_interval_secs,
-                low.break_duration_secs,
-                low.idle_credit_secs
-            ),
-            (WORK_SECS.0, BREAK_SECS.0, IDLE_SECS.0)
+            (low.work_interval_secs, low.break_duration_secs),
+            (WORK_SECS.0, BREAK_SECS.0)
         );
 
         let high = Settings {
             work_interval_secs: u64::MAX,
             break_duration_secs: u64::MAX,
-            idle_credit_secs: u64::MAX,
             ..Settings::default()
         }
         .clamped();
         assert_eq!(
-            (
-                high.work_interval_secs,
-                high.break_duration_secs,
-                high.idle_credit_secs
-            ),
-            (WORK_SECS.1, BREAK_SECS.1, IDLE_SECS.1)
+            (high.work_interval_secs, high.break_duration_secs),
+            (WORK_SECS.1, BREAK_SECS.1)
         );
 
         assert!(
@@ -264,7 +212,6 @@ mod tests {
         let s = Settings {
             work_interval_secs: 900,
             break_duration_secs: 30,
-            idle_credit_secs: 120,
             tray_display: TrayDisplay::IconOnly,
             start_at_login: true,
             notification_sound: false,
@@ -277,7 +224,6 @@ mod tests {
         let s = Settings {
             work_interval_secs: 1500,
             break_duration_secs: 25,
-            idle_credit_secs: 90,
             tray_display: TrayDisplay::Minutes,
             start_at_login: true,
             notification_sound: false,
@@ -349,6 +295,19 @@ mod tests {
         assert!(text.contains("# EyeSaver settings"));
         assert!(text.contains("60-10800"));
         assert!(text.contains("tray-display"));
+    }
+
+    #[test]
+    fn a_file_from_a_version_with_an_idle_threshold_still_loads() {
+        // Written by 0.1.x, which counted a minute without input as a break.
+        let old = "work-interval-secs = 900\nidle-credit-secs = 60\ntray-display = \"minutes\"\n";
+        let s = Settings::from_toml(old).unwrap();
+        assert_eq!(s.work_interval_secs, 900);
+        assert_eq!(s.tray_display, TrayDisplay::Minutes);
+        assert!(
+            !s.to_toml().contains("idle"),
+            "and the key is not written back"
+        );
     }
 
     #[test]
